@@ -19,6 +19,12 @@ data class CalInfo(
     val account: String
 )
 
+data class EventPreview(
+    val title: String,
+    val begin: Long,
+    val calendarId: Long
+)
+
 object CalendarReader {
 
     fun listCalendars(context: Context): List<CalInfo> {
@@ -41,16 +47,19 @@ object CalendarReader {
         return result
     }
 
+    private fun instancesUri(fromMillis: Long, toMillis: Long): android.net.Uri {
+        return CalendarContract.Instances.CONTENT_URI.buildUpon()
+            .appendPath(fromMillis.toString())
+            .appendPath(toMillis.toString())
+            .build()
+    }
+
     fun queryEvents(
         context: Context,
         fromMillis: Long,
         toMillis: Long,
         settings: AppSettings
     ): List<CalEvent> {
-        val uri = CalendarContract.Instances.CONTENT_URI.buildUpon()
-            .appendPath(fromMillis.toString())
-            .appendPath(toMillis.toString())
-            .build()
         val projection = arrayOf(
             CalendarContract.Instances._ID,
             CalendarContract.Instances.EVENT_ID,
@@ -61,7 +70,7 @@ object CalendarReader {
         )
         val result = mutableListOf<CalEvent>()
         context.contentResolver.query(
-            uri, projection, null, null,
+            instancesUri(fromMillis, toMillis), projection, null, null,
             CalendarContract.Instances.BEGIN + " ASC"
         )?.use { c ->
             while (c.moveToNext()) {
@@ -74,6 +83,52 @@ object CalendarReader {
                 if (settings.calendarIds.isNotEmpty() && !settings.calendarIds.contains(calendarId)) continue
                 val location = lookupLocation(context, eventId)
                 result += CalEvent(instanceId, begin, end, title, location, calendarId)
+            }
+        }
+        return result
+    }
+
+    fun countEventsPerCalendar(context: Context, fromMillis: Long, toMillis: Long): Map<Long, Int> {
+        val projection = arrayOf(
+            CalendarContract.Instances._ID,
+            CalendarContract.Instances.CALENDAR_ID
+        )
+        val result = mutableMapOf<Long, Int>()
+        runCatching {
+            context.contentResolver.query(
+                instancesUri(fromMillis, toMillis), projection, null, null,
+                CalendarContract.Instances.BEGIN + " ASC"
+            )?.use { c ->
+                while (c.moveToNext()) {
+                    val calId = c.getLong(1)
+                    result[calId] = (result[calId] ?: 0) + 1
+                }
+            }
+        }
+        return result
+    }
+
+    fun previewEvents(
+        context: Context,
+        fromMillis: Long,
+        toMillis: Long,
+        limit: Int
+    ): List<EventPreview> {
+        val projection = arrayOf(
+            CalendarContract.Instances._ID,
+            CalendarContract.Instances.CALENDAR_ID,
+            CalendarContract.Instances.BEGIN,
+            CalendarContract.Instances.TITLE
+        )
+        val result = mutableListOf<EventPreview>()
+        runCatching {
+            context.contentResolver.query(
+                instancesUri(fromMillis, toMillis), projection, null, null,
+                CalendarContract.Instances.BEGIN + " ASC"
+            )?.use { c ->
+                while (c.moveToNext() && result.size < limit) {
+                    result += EventPreview(c.getString(3) ?: "", c.getLong(2), c.getLong(1))
+                }
             }
         }
         return result

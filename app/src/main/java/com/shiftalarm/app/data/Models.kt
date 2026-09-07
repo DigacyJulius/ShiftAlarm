@@ -65,10 +65,17 @@ data class AlarmEntry(
 )
 
 @Serializable
+data class SyncLog(
+    val time: Long,
+    val text: String
+)
+
+@Serializable
 data class AppData(
     val profiles: List<WorkProfile> = emptyList(),
     val normalAlarms: List<NormalAlarm> = emptyList(),
     val settings: AppSettings = AppSettings(),
     val scheduled: List<AlarmEntry> = emptyList(),
-    val dismissedGroups: Map<Long, Long> = emptyMap()
+    val dismissedGroups: Map<Long, Long> = emptyMap(),
+    val syncLogs: List<SyncLog> = emptyList()
 )

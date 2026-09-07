@@ -7,6 +7,7 @@ import androidx.work.WorkManager
 import com.shiftalarm.app.calendar.CalendarReader
 import com.shiftalarm.app.data.AlarmEntry
 import com.shiftalarm.app.data.Store
+import com.shiftalarm.app.data.SyncLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -94,7 +95,14 @@ object SyncEngine {
         for (old in data.scheduled) AlarmScheduler.cancel(context, old)
         for (e in all) AlarmScheduler.schedule(context, e)
 
-        val newData = data.copy(scheduled = all, dismissedGroups = dismissed)
+        val logText = when {
+            errors.isNotEmpty() -> "\u5931\u6557\uff1a" + errors.joinToString("\uff1b")
+            all.isEmpty() -> "\u6392\u5514\u5230\u9b27\u9418\uff08\u65e5\u66c6\u8b80\u5230 " + eventsRead + " \u500b\u4e8b\u4ef6\u3001\u547d\u4e2d " + matchedEvents + " \u500b\u66f4\u3001\u4f11\u606f\u65e5 " + offDays + "\uff09"
+            else -> "\u6392\u54a9 " + all.size + " \u7c92\u9b27\u9418\uff08\u8b80\u5230 " + eventsRead + " \u500b\u4e8b\u4ef6\u3001\u547d\u4e2d " + matchedEvents + " \u500b\u66f4\u3001\u4f11\u606f\u65e5 " + offDays + "\uff09"
+        }
+        val newLogs = (listOf(SyncLog(System.currentTimeMillis(), logText)) + data.syncLogs).take(10)
+
+        val newData = data.copy(scheduled = all, dismissedGroups = dismissed, syncLogs = newLogs)
         store.save(newData)
         SyncResult(all.size, matchedEvents, offDays, eventsRead, errors, all.firstOrNull())
     }
