@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -94,7 +95,7 @@ fun ProfilesScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
         item {
             Text("工作地點設定檔", fontSize = 22.sp, fontWeight = FontWeight.Bold)
             Text(
-                "App 會讀取 Google 日曆事件嘅「地點」同「標題」，若包含關鍵字，就會套用該設定檔嘅鬧鐘規則。開始時間決定早／午／晚更。",
+                "事件標題含「地點關鍵字」→ 命中設定檔；再按標題嘅「更份代號」決定更種；標題含「休息日關鍵字」→ 唔排鬧鐘。",
                 fontSize = 13.sp
             )
         }
@@ -107,11 +108,19 @@ fun ProfilesScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
                     Modifier.fillMaxWidth().clickable { editing = p }.padding(16.dp)
                 ) {
                     Text(p.name.ifEmpty { "（未命名）" }, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    Text("關鍵字：" + p.keywords, fontSize = 13.sp)
+                    Text(
+                        "地點關鍵字：" + p.keywords.ifEmpty { "（未設）" } +
+                            "｜休息日：" + p.offKeyword.ifEmpty { "（無）" },
+                        fontSize = 13.sp
+                    )
                     Spacer(Modifier.height(4.dp))
-                    Text(shiftSummary("早更", p.morning), fontSize = 13.sp)
-                    Text(shiftSummary("午更", p.afternoon), fontSize = 13.sp)
-                    Text(shiftSummary("晚更", p.night), fontSize = 13.sp)
+                    p.shifts.forEach { s ->
+                        Text(
+                            s.name + "（" + s.keyword.ifEmpty { "無代號" } + "）" + s.wakeTime +
+                                " 起·後備 " + s.alarmCount + " 粒·每 " + s.intervalMin + " 分",
+                            fontSize = 13.sp
+                        )
+                    }
                 }
             }
         }
@@ -123,9 +132,6 @@ fun ProfilesScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
     }
 }
 
-private fun shiftSummary(label: String, c: ShiftConfig): String =
-    "$label ${c.wakeTime} 起·後備 ${c.alarmCount} 粒·每 ${c.intervalMin} 分鐘一粒"
-
 @Composable
 fun ProfileEditScreen(
     initial: WorkProfile,
@@ -135,9 +141,8 @@ fun ProfileEditScreen(
 ) {
     var name by remember { mutableStateOf(initial.name) }
     var keywords by remember { mutableStateOf(initial.keywords) }
-    var morning by remember { mutableStateOf(initial.morning) }
-    var afternoon by remember { mutableStateOf(initial.afternoon) }
-    var night by remember { mutableStateOf(initial.night) }
+    var offKeyword by remember { mutableStateOf(initial.offKeyword) }
+    var shifts by remember { mutableStateOf(initial.shifts) }
 
     LazyColumn(
         Modifier.fillMaxSize().padding(16.dp),
@@ -149,7 +154,7 @@ fun ProfileEditScreen(
                 value = name,
                 onValueChange = { name = it },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("地點名稱（例：中環分店）") }
+                label = { Text("地點名稱（例：CMC）") }
             )
         }
         item {
@@ -157,19 +162,41 @@ fun ProfileEditScreen(
                 value = keywords,
                 onValueChange = { keywords = it },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("配對關鍵字（逗號分隔，比對事件地點＋標題）") }
+                label = { Text("地點關鍵字（逗號分隔，比對事件地點＋標題，例：cmc）") }
             )
         }
-        item { Text("早更設定", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
-        item { ShiftEditor(morning) { morning = it } }
-        item { Text("午更設定", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
-        item { ShiftEditor(afternoon) { afternoon = it } }
-        item { Text("晚更設定", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
-        item { ShiftEditor(night) { night = it } }
+        item {
+            OutlinedTextField(
+                value = offKeyword,
+                onValueChange = { offKeyword = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("休息日關鍵字（標題含此字＝唔排鬧鐘，例：off）") }
+            )
+        }
+        item { Text("更種設定（各自代號＋起身時間）", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+        itemsIndexed(shifts) { idx, s ->
+            ShiftEditor(
+                cfg = s,
+                onDelete = {
+                    if (shifts.size > 1) shifts = shifts.filterIndexed { i, _ -> i != idx }
+                },
+                onChange = { updated ->
+                    shifts = shifts.mapIndexed { i, old -> if (i == idx) updated else old }
+                }
+            )
+        }
+        item {
+            OutlinedButton(
+                onClick = { shifts = shifts + ShiftConfig(name = "新更種") },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("＋ 新增更種")
+            }
+        }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(onClick = {
-                    onDone(WorkProfile(initial.id, name, keywords, morning, afternoon, night))
+                    onDone(WorkProfile(initial.id, name, keywords, offKeyword, shifts))
                 }) { Text("儲存") }
                 OutlinedButton(onClick = { onDone(null) }) { Text("取消") }
                 if (!isNew) {
@@ -184,10 +211,24 @@ fun ProfileEditScreen(
 }
 
 @Composable
-fun ShiftEditor(cfg: ShiftConfig, onChange: (ShiftConfig) -> Unit) {
+fun ShiftEditor(cfg: ShiftConfig, onDelete: () -> Unit, onChange: (ShiftConfig) -> Unit) {
     var showPicker by remember { mutableStateOf(false) }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
+            OutlinedTextField(
+                value = cfg.name,
+                onValueChange = { onChange(cfg.copy(name = it)) },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("更種名稱（例：早更）") }
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = cfg.keyword,
+                onValueChange = { onChange(cfg.copy(keyword = it)) },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("更份代號（事件標題含此字＝用呢個更，例：a）") }
+            )
+            Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("起身時間", Modifier.weight(1f))
                 OutlinedButton(onClick = { showPicker = true }) { Text(cfg.wakeTime) }
@@ -195,6 +236,10 @@ fun ShiftEditor(cfg: ShiftConfig, onChange: (ShiftConfig) -> Unit) {
             Spacer(Modifier.height(8.dp))
             Stepper("後備鬧鐘數（防貪睡）", cfg.alarmCount, 0, 9) { onChange(cfg.copy(alarmCount = it)) }
             Stepper("後備間隔（分鐘）", cfg.intervalMin, 1, 30) { onChange(cfg.copy(intervalMin = it)) }
+            Spacer(Modifier.height(4.dp))
+            TextButton(onClick = onDelete) {
+                Text("刪除此更", color = MaterialTheme.colorScheme.error)
+            }
         }
     }
     if (showPicker) {
@@ -389,7 +434,7 @@ fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
 
         item {
             Text(
-                "更時段界線（24小時制；事件開始時間落喺邊個時段，就用邊個更嘅起身時間。晚更結束可填 28＝翌日 04:00）",
+                "更時段界線（僅用於冇更份代號命中時嘅後備判斷，24小時制）",
                 fontSize = 16.sp, fontWeight = FontWeight.Bold
             )
         }

@@ -15,6 +15,8 @@ import java.util.concurrent.TimeUnit
 
 data class SyncResult(
     val total: Int,
+    val matchedEvents: Int,
+    val offDays: Int,
     val errors: List<String>,
     val next: AlarmEntry?
 )
@@ -28,6 +30,8 @@ object SyncEngine {
         val dismissed = data.dismissedGroups
             .filterValues { now - it < TimeUnit.HOURS.toMillis(48) }
         val errors = mutableListOf<String>()
+        var matchedEvents = 0
+        var offDays = 0
 
         val workEntries = mutableListOf<AlarmEntry>()
         if (data.profiles.isNotEmpty()) {
@@ -38,9 +42,14 @@ object SyncEngine {
                 for (ev in events) {
                     val profile = RuleEngine.matchProfile(ev, data.profiles) ?: continue
                     if (dismissed.containsKey(ev.instanceId)) continue
-                    for (e in RuleEngine.buildWorkAlarms(ev, profile, data.settings)) {
-                        if (e.triggerAt > now) workEntries += e
+                    if (RuleEngine.isOffDay(ev, profile)) {
+                        offDays++
+                        continue
                     }
+                    val alarms = RuleEngine.buildWorkAlarms(ev, profile, data.settings)
+                        .filter { it.triggerAt > now }
+                    if (alarms.isNotEmpty()) matchedEvents++
+                    workEntries += alarms
                 }
             } catch (e: Exception) {
                 errors += "\u8b80\u53d6\u65e5\u66c6\u5931\u6557\uff1a" + (e.message ?: e.toString())
@@ -84,7 +93,7 @@ object SyncEngine {
 
         val newData = data.copy(scheduled = all, dismissedGroups = dismissed)
         store.save(newData)
-        SyncResult(all.size, errors, all.firstOrNull())
+        SyncResult(all.size, matchedEvents, offDays, errors, all.firstOrNull())
     }
 
     fun schedulePeriodicSync(context: Context) {
