@@ -167,6 +167,7 @@ fun AppRoot() {
     fun deleteAlarm(entry: AlarmEntry) {
         scope.launch {
             val current = store.data.first()
+            val now = System.currentTimeMillis()
             when (entry.kind) {
                 "work" -> {
                     AlarmScheduler.cancel(context, entry)
@@ -174,7 +175,8 @@ fun AppRoot() {
                     store.save(
                         current.copy(
                             scheduled = kept,
-                            dismissedAlarmIds = current.dismissedAlarmIds + entry.id
+                            dismissedAlarmIds = current.dismissedAlarmIds + entry.id,
+                            dismissedAlarmMeta = current.dismissedAlarmMeta + (entry.id to entry.label)
                         )
                     )
                 }
