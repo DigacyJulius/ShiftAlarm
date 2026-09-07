@@ -106,8 +106,14 @@ fun AppRoot() {
             syncMessage = when {
                 r.errors.isNotEmpty() ->
                     "同步失敗：" + r.errors.joinToString("；")
+                data.profiles.isEmpty() ->
+                    "同步完成，但排唔到任何鬧鐘：仲未有地點設定檔。去「地點設定檔」→ 新增（例：名稱 CMC、地點關鍵字 cmc），儲存後再撳同步。"
+                r.eventsRead == 0 ->
+                    "同步完成，但喺日曆讀到 0 個事件。檢查：① Google Calendar App 內睇唔睇到啲更期（要先同步落手機）？② 設定→日曆來源有冇揀錯？③ 更期係咪喺未來 " + data.settings.lookaheadDays + " 日內？"
+                r.matchedEvents == 0 && r.offDays == 0 ->
+                    "同步完成：讀到 " + r.eventsRead + " 個事件，但冇一個命中設定檔。檢查事件標題（例：cmc a）同設定檔嘅「地點關鍵字」係咪一致。"
                 r.total == 0 ->
-                    "同步完成，但排唔到任何鬧鐘。檢查：① 已建立地點設定檔？② 已授予日曆權限？③ 事件標題有冇地點關鍵字＋更份代號（例：cmc a）？"
+                    "同步完成：命中 " + r.matchedEvents + " 個更、" + r.offDays + " 個休息日，但全部起身時間已過。"
                 else ->
                     "同步完成：命中 " + r.matchedEvents + " 個更、跳過 " + r.offDays + " 個休息日，共排 " + r.total + " 粒鬧鐘"
             }
