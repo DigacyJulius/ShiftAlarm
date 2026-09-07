@@ -29,7 +29,7 @@ object IcalSource {
         conn.readTimeout = 15000
         conn.instanceFollowRedirects = true
         try {
-            conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            return conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
         } finally {
             conn.disconnect()
         }
