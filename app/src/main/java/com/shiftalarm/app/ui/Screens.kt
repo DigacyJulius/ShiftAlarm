@@ -464,19 +464,41 @@ fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
         }
 
         item { Text("已刪除鬧鐘管理", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    "已刪除嘅更期鬧鐘：" + data.dismissedAlarmIds.size + " 粒。這些鬧鐘已永久不會重排，直到你撳下面「還原全部」。",
-                    fontSize = 12.sp
-                )
-                if (data.dismissedAlarmIds.isNotEmpty() || data.dismissedGroups.isNotEmpty()) {
-                    OutlinedButton(onClick = {
+        if (data.dismissedAlarmMeta.isEmpty() && data.dismissedAlarmIds.isEmpty() && data.dismissedGroups.isEmpty()) {
+            item { Text("暫時未有已刪除嘅更期鬧鐘。", fontSize = 12.sp) }
+        }
+        items(data.dismissedAlarmMeta.entries.toList()) { entry ->
+            Card(Modifier.fillMaxWidth()) {
+                Row(
+                    Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(entry.value, Modifier.weight(1f), fontSize = 14.sp)
+                    TextButton(onClick = {
                         persistThenSync { d ->
-                            d.copy(dismissedAlarmIds = emptySet(), dismissedGroups = emptyMap())
+                            d.copy(
+                                dismissedAlarmIds = d.dismissedAlarmIds - entry.key,
+                                dismissedAlarmMeta = d.dismissedAlarmMeta - entry.key
+                            )
                         }
-                    }) { Text("還原全部已刪除嘅更期鬧鐘") }
+                    }) { Text("還原") }
                 }
+            }
+        }
+        if (data.dismissedAlarmIds.isNotEmpty() || data.dismissedGroups.isNotEmpty()) {
+            item {
+                OutlinedButton(
+                    onClick = {
+                        persistThenSync { d ->
+                            d.copy(
+                                dismissedAlarmIds = emptySet(),
+                                dismissedAlarmMeta = emptyMap(),
+                                dismissedGroups = emptyMap()
+                            )
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("還原全部已刪除嘅更期鬧鐘") }
             }
         }
 
