@@ -47,9 +47,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.shiftalarm.app.core.AlarmEntry
 import com.shiftalarm.app.core.AlarmScheduler
 import com.shiftalarm.app.core.SyncEngine
+import com.shiftalarm.app.data.AlarmEntry
 import com.shiftalarm.app.data.AppData
 import com.shiftalarm.app.data.Store
 import com.shiftalarm.app.ui.NormalAlarmsScreen
