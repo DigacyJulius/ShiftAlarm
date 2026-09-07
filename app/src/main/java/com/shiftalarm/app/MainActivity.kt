@@ -21,7 +21,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
-import androidx.compose.material.icons.filled.Bug
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Settings
@@ -162,7 +162,7 @@ fun AppRoot() {
                 NavigationBarItem(
                     selected = tab == 4,
                     onClick = { tab = 4 },
-                    icon = { Icon(Icons.Filled.Bug, null) },
+                    icon = { Icon(Icons.Filled.BugReport, null) },
                     label = { Text("診斷") }
                 )
             }
