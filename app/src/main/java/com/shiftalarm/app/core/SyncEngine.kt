@@ -32,6 +32,7 @@ object SyncEngine {
         val now = System.currentTimeMillis()
         val dismissed = data.dismissedGroups
             .filterValues { now - it < TimeUnit.HOURS.toMillis(48) }
+        val dismissedIds = data.dismissedAlarmIds
         val errors = mutableListOf<String>()
         var matchedEvents = 0
         var offDays = 0
@@ -48,7 +49,7 @@ object SyncEngine {
                     try {
                         IcalSource.fetchEventsFromUrl(data.settings.icalUrl, from, to)
                     } catch (e: Exception) {
-                        errors += "iCal 抓取失敗：" + (e.message ?: e.toString())
+                        errors += "iCal \u6293\u53d6\u5931\u6557\uff1a" + (e.message ?: e.toString())
                         emptyList()
                     }
                 }
@@ -63,7 +64,7 @@ object SyncEngine {
                     continue
                 }
                 val alarms = RuleEngine.buildWorkAlarms(ev, profile, data.settings)
-                    .filter { it.triggerAt > now }
+                    .filter { it.triggerAt > now && it.id !in dismissedIds }
                 if (alarms.isNotEmpty()) matchedEvents++
                 workEntries += alarms
             }
@@ -84,13 +85,13 @@ object SyncEngine {
                 if (na.days.isEmpty()) {
                     normalEntries += AlarmEntry(
                         baseId + d.coerceAtMost(9), na.id, t,
-                        na.label.ifEmpty { "一般鬧鐘" }, "normal"
+                        na.label.ifEmpty { "\u4e00\u822c\u9b27\u9418" }, "normal"
                     )
                     break
                 } else if (na.days.contains(cal.get(Calendar.DAY_OF_WEEK))) {
                     normalEntries += AlarmEntry(
                         baseId + d.coerceAtMost(9), na.id, t,
-                        na.label.ifEmpty { "一般鬧鐘" }, "normal"
+                        na.label.ifEmpty { "\u4e00\u822c\u9b27\u9418" }, "normal"
                     )
                 }
             }
@@ -105,9 +106,9 @@ object SyncEngine {
         for (e in all) AlarmScheduler.schedule(context, e)
 
         val logText = when {
-            errors.isNotEmpty() -> "失敗：" + errors.joinToString("；")
-            all.isEmpty() -> "排唔到鬧鐘（讀到 " + eventsRead + " 個事件、命中 " + matchedEvents + " 個更、休息日 " + offDays + "）"
-            else -> "排咗 " + all.size + " 粒鬧鐘（讀到 " + eventsRead + " 個事件、命中 " + matchedEvents + " 個更、休息日 " + offDays + "）"
+            errors.isNotEmpty() -> "\u5931\u6557\uff1a" + errors.joinToString("\uff1b")
+            all.isEmpty() -> "\u6392\u5514\u5230\u9b27\u9418\uff08\u8b80\u5230 " + eventsRead + " \u500b\u4e8b\u4ef6\u3001\u547d\u4e2d " + matchedEvents + " \u500b\u66f4\u3001\u4f11\u606f\u65e5 " + offDays + "\uff09"
+            else -> "\u6392\u5497 " + all.size + " \u7c92\u9b27\u9418\uff08\u8b80\u5230 " + eventsRead + " \u500b\u4e8b\u4ef6\u3001\u547d\u4e2d " + matchedEvents + " \u500b\u66f4\u3001\u4f11\u606f\u65e5 " + offDays + "\uff09"
         }
         val newLogs = (listOf(SyncLog(System.currentTimeMillis(), logText)) + data.syncLogs).take(10)
 
