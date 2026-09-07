@@ -401,12 +401,30 @@ fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
     ) {
         item { Text("設定", fontSize = 22.sp, fontWeight = FontWeight.Bold) }
 
+        item { Text("外觀", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+        item {
+            val options = listOf("system" to "跟隨系統", "light" to "淺色", "dark" to "深色")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                options.forEach { (value, label) ->
+                    if (s.darkMode == value) {
+                        Button(onClick = {
+                            persistThenSync { d -> d.copy(settings = d.settings.copy(darkMode = value)) }
+                        }) { Text(label) }
+                    } else {
+                        OutlinedButton(onClick = {
+                            persistThenSync { d -> d.copy(settings = d.settings.copy(darkMode = value)) }
+                        }) { Text(label) }
+                    }
+                }
+            }
+        }
+
         item { Text("iCal 網址（更期來源）", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
         item {
             var icalUrl by remember(s.icalUrl) { mutableStateOf(s.icalUrl) }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    "貼上 Google Calendar 的「私人 iCal 網址」（齒輪設定 → 匯入和匯出／整合日曆 → 私人網址）。App 每小時自動抓取一次，唔需手動揀日曆來源。若已在「診斷」分頁匯入過 .ics 檔案，檔案優先。",
+                    "貼上 Google Calendar 的「私人 iCal 網址」（齒輪設定 → 匯入和匯出／整合日曆 → 私人網址）。App 每小時自動抓取一次。若已在「診斷」分頁匯入過 .ics 檔案，檔案優先。",
                     fontSize = 12.sp
                 )
                 OutlinedTextField(
