@@ -463,6 +463,23 @@ fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
             }
         }
 
+        item { Text("已刪除鬧鐘管理", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "已刪除嘅更期鬧鐘：" + data.dismissedAlarmIds.size + " 粒。這些鬧鐘已永久不會重排，直到你撳下面「還原全部」。",
+                    fontSize = 12.sp
+                )
+                if (data.dismissedAlarmIds.isNotEmpty() || data.dismissedGroups.isNotEmpty()) {
+                    OutlinedButton(onClick = {
+                        persistThenSync { d ->
+                            d.copy(dismissedAlarmIds = emptySet(), dismissedGroups = emptyMap())
+                        }
+                    }) { Text("還原全部已刪除嘅更期鬧鐘") }
+                }
+            }
+        }
+
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = {

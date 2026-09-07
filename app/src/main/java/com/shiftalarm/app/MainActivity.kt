@@ -167,19 +167,34 @@ fun AppRoot() {
     fun deleteAlarm(entry: AlarmEntry) {
         scope.launch {
             val current = store.data.first()
-            val now = System.currentTimeMillis()
-            val kept: List<AlarmEntry>
-            var dismissedGroups = current.dismissedGroups
-            if (entry.kind == "work" && !entry.isSnooze) {
-                dismissedGroups = dismissedGroups + (entry.groupId to now)
-                val removed = current.scheduled.filter { it.kind == "work" && it.groupId == entry.groupId }
-                removed.forEach { AlarmScheduler.cancel(context, it) }
-                kept = current.scheduled.filterNot { removed.contains(it) }
-            } else {
-                AlarmScheduler.cancel(context, entry)
-                kept = current.scheduled.filterNot { it.id == entry.id }
+            when (entry.kind) {
+                "work" -> {
+                    AlarmScheduler.cancel(context, entry)
+                    val kept = current.scheduled.filterNot { it.id == entry.id }
+                    store.save(
+                        current.copy(
+                            scheduled = kept,
+                            dismissedAlarmIds = current.dismissedAlarmIds + entry.id
+                        )
+                    )
+                }
+                "normal" -> {
+                    val related = current.scheduled.filter { it.kind == "normal" && it.groupId == entry.groupId }
+                    related.forEach { AlarmScheduler.cancel(context, it) }
+                    val kept = current.scheduled.filterNot { related.contains(it) }
+                    store.save(
+                        current.copy(
+                            scheduled = kept,
+                            normalAlarms = current.normalAlarms.filterNot { it.id == entry.groupId }
+                        )
+                    )
+                }
+                else -> {
+                    AlarmScheduler.cancel(context, entry)
+                    val kept = current.scheduled.filterNot { it.id == entry.id }
+                    store.save(current.copy(scheduled = kept))
+                }
             }
-            store.save(current.copy(scheduled = kept, dismissedGroups = dismissedGroups))
         }
     }
 
