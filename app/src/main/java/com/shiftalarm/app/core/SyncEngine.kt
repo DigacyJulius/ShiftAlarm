@@ -17,6 +17,7 @@ data class SyncResult(
     val total: Int,
     val matchedEvents: Int,
     val offDays: Int,
+    val eventsRead: Int,
     val errors: List<String>,
     val next: AlarmEntry?
 )
@@ -32,6 +33,7 @@ object SyncEngine {
         val errors = mutableListOf<String>()
         var matchedEvents = 0
         var offDays = 0
+        var eventsRead = 0
 
         val workEntries = mutableListOf<AlarmEntry>()
         if (data.profiles.isNotEmpty()) {
@@ -39,6 +41,7 @@ object SyncEngine {
                 val from = now - TimeUnit.HOURS.toMillis(12)
                 val to = now + TimeUnit.DAYS.toMillis(data.settings.lookaheadDays.toLong())
                 val events = CalendarReader.queryEvents(context, from, to, data.settings)
+                eventsRead = events.size
                 for (ev in events) {
                     val profile = RuleEngine.matchProfile(ev, data.profiles) ?: continue
                     if (dismissed.containsKey(ev.instanceId)) continue
@@ -93,7 +96,7 @@ object SyncEngine {
 
         val newData = data.copy(scheduled = all, dismissedGroups = dismissed)
         store.save(newData)
-        SyncResult(all.size, matchedEvents, offDays, errors, all.firstOrNull())
+        SyncResult(all.size, matchedEvents, offDays, eventsRead, errors, all.firstOrNull())
     }
 
     fun schedulePeriodicSync(context: Context) {
