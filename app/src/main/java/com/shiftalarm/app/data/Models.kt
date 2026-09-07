@@ -10,6 +10,8 @@ enum class ShiftType(val label: String) {
 
 @Serializable
 data class ShiftConfig(
+    val name: String = "早更",
+    val keyword: String = "",
     val wakeTime: String = "05:30",
     val alarmCount: Int = 2,
     val intervalMin: Int = 5
@@ -20,9 +22,13 @@ data class WorkProfile(
     val id: Long = System.currentTimeMillis(),
     val name: String = "",
     val keywords: String = "",
-    val morning: ShiftConfig = ShiftConfig("05:30"),
-    val afternoon: ShiftConfig = ShiftConfig("10:30"),
-    val night: ShiftConfig = ShiftConfig("15:30")
+    val offKeyword: String = "off",
+    val shifts: List<ShiftConfig> = listOf(
+        ShiftConfig(name = "早更", keyword = "a", wakeTime = "05:30"),
+        ShiftConfig(name = "午更", keyword = "p", wakeTime = "10:30"),
+        ShiftConfig(name = "晚更", keyword = "n", wakeTime = "15:30"),
+        ShiftConfig(name = "特別更", keyword = "a-night", wakeTime = "05:30")
+    )
 )
 
 @Serializable

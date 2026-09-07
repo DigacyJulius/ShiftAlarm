@@ -3,6 +3,7 @@ package com.shiftalarm.app.core
 import com.shiftalarm.app.calendar.CalEvent
 import com.shiftalarm.app.data.AlarmEntry
 import com.shiftalarm.app.data.AppSettings
+import com.shiftalarm.app.data.ShiftConfig
 import com.shiftalarm.app.data.ShiftType
 import com.shiftalarm.app.data.WorkProfile
 import java.util.Calendar
@@ -11,12 +12,32 @@ import java.util.concurrent.TimeUnit
 object RuleEngine {
 
     fun matchProfile(event: CalEvent, profiles: List<WorkProfile>): WorkProfile? {
-        val haystack = (event.location + " " + event.title).lowercase()
+        val hay = (event.location + " " + event.title).lowercase()
         return profiles.firstOrNull { p ->
             p.keywords.split(",", "\uff0c")
                 .map { it.trim().lowercase() }
                 .filter { it.isNotEmpty() }
-                .any { haystack.contains(it) }
+                .any { hay.contains(it) }
+        }
+    }
+
+    fun isOffDay(event: CalEvent, profile: WorkProfile): Boolean {
+        val off = profile.offKeyword.trim().lowercase()
+        return off.isNotEmpty() && event.title.lowercase().contains(off)
+    }
+
+    fun pickShift(event: CalEvent, profile: WorkProfile, settings: AppSettings): ShiftConfig? {
+        val title = event.title.lowercase()
+        val matches = profile.shifts.filter {
+            it.keyword.isNotBlank() && title.contains(it.keyword.trim().lowercase())
+        }
+        if (matches.isNotEmpty()) {
+            return matches.maxByOrNull { it.keyword.trim().length }
+        }
+        return when (shiftOf(hourOf(event.begin), settings)) {
+            ShiftType.MORNING -> profile.shifts.getOrNull(0)
+            ShiftType.AFTERNOON -> profile.shifts.getOrNull(1)
+            ShiftType.NIGHT -> profile.shifts.getOrNull(2)
         }
     }
 
@@ -35,12 +56,7 @@ object RuleEngine {
         profile: WorkProfile,
         settings: AppSettings
     ): List<AlarmEntry> {
-        val shift = shiftOf(hourOf(event.begin), settings)
-        val cfg = when (shift) {
-            ShiftType.MORNING -> profile.morning
-            ShiftType.AFTERNOON -> profile.afternoon
-            ShiftType.NIGHT -> profile.night
-        }
+        val cfg = pickShift(event, profile, settings) ?: return emptyList()
         val (h, m) = parseTime(cfg.wakeTime)
         val base = Calendar.getInstance().apply {
             timeInMillis = event.begin
@@ -58,7 +74,7 @@ object RuleEngine {
                 id = baseId + i,
                 groupId = event.instanceId,
                 triggerAt = t,
-                label = profile.name + " \u00b7 " + shift.label + suffix,
+                label = profile.name + " \u00b7 " + cfg.name + suffix,
                 kind = "work"
             )
         }
