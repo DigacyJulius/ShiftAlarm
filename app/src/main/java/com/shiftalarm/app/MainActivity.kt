@@ -22,12 +22,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -41,6 +43,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -111,7 +114,7 @@ fun AppRoot() {
                 data.profiles.isEmpty() ->
                     "同步完成，但排唔到任何鬧鐘：仲未有地點設定檔。去「地點設定檔」→ 新增（例：名稱 CMC、地點關鍵字 cmc），儲存後再撳同步。"
                 r.eventsRead == 0 ->
-                    "同步完成，但讀到 0 個事件。檢查：① Google Calendar App 內睇唔睇到啲更期（要先同步落手機）？② 設定→日曆來源有冇揀錯？③ 更期係咪喺未來 " + data.settings.lookaheadDays + " 日內？（去「診斷」分頁睇詳情或改用 iCal 匯入）"
+                    "同步完成，但讀到 0 個事件。檢查：① iCal 網址有冇填對？② 更期係咪喺未來 " + data.settings.lookaheadDays + " 日內？（去「診斷」分頁睇詳情）"
                 r.matchedEvents == 0 && r.offDays == 0 ->
                     "同步完成：讀到 " + r.eventsRead + " 個事件，但冇一個命中設定檔。檢查事件標題（例：cmc a）同設定檔嘅「地點關鍵字」係咪一致。（去「診斷」分頁睇事件標題）"
                 r.total == 0 ->
@@ -129,6 +132,25 @@ fun AppRoot() {
             val current = store.data.first()
             store.save(transform(current))
             SyncEngine.sync(context)
+        }
+    }
+
+    fun deleteAlarm(entry: AlarmEntry) {
+        scope.launch {
+            val current = store.data.first()
+            val now = System.currentTimeMillis()
+            val kept: List<AlarmEntry>
+            var dismissedGroups = current.dismissedGroups
+            if (entry.kind == "work" && !entry.isSnooze) {
+                dismissedGroups = dismissedGroups + (entry.groupId to now)
+                val removed = current.scheduled.filter { it.kind == "work" && it.groupId == entry.groupId }
+                removed.forEach { AlarmScheduler.cancel(context, it) }
+                kept = current.scheduled.filterNot { removed.contains(it) }
+            } else {
+                AlarmScheduler.cancel(context, entry)
+                kept = current.scheduled.filterNot { it.id == entry.id }
+            }
+            store.save(current.copy(scheduled = kept, dismissedGroups = dismissedGroups))
         }
     }
 
@@ -174,7 +196,8 @@ fun AppRoot() {
                     data = data,
                     syncMessage = syncMessage,
                     onSync = { doSync() },
-                    onTest = { scope.launch { scheduleTestAlarm(context, store) } }
+                    onTest = { scope.launch { scheduleTestAlarm(context, store) } },
+                    onDelete = { e -> deleteAlarm(e) }
                 )
                 1 -> ProfilesScreen(data, persistThenSync = ::persistThenSync)
                 2 -> NormalAlarmsScreen(data, persistThenSync = ::persistThenSync)
@@ -213,7 +236,8 @@ fun HomeScreen(
     data: AppData,
     syncMessage: String?,
     onSync: () -> Unit,
-    onTest: () -> Unit
+    onTest: () -> Unit,
+    onDelete: (AlarmEntry) -> Unit
 ) {
     val now = System.currentTimeMillis()
     val upcoming = data.scheduled.filter { it.triggerAt > now }.sortedBy { it.triggerAt }
@@ -266,11 +290,16 @@ fun HomeScreen(
             items(entries) { e ->
                 Card(Modifier.fillMaxWidth()) {
                     Row(
-                        Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                        Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(timeFmt.format(Date(e.triggerAt)), fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.height(0.dp))
-                        Text("　" + e.label, fontSize = 15.sp)
+                        Column(Modifier.weight(1f)) {
+                            Text(timeFmt.format(Date(e.triggerAt)), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                            Text(e.label, fontSize = 15.sp)
+                        }
+                        IconButton(onClick = { onDelete(e) }) {
+                            Icon(Icons.Filled.Delete, "刪除鬧鐘", tint = MaterialTheme.colorScheme.error)
+                        }
                     }
                 }
             }

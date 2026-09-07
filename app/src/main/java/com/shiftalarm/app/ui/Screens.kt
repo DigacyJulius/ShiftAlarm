@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,7 +27,6 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,21 +39,17 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.shiftalarm.app.calendar.CalendarReader
-import com.shiftalarm.app.calendar.CalInfo
 import com.shiftalarm.app.core.RuleEngine
 import com.shiftalarm.app.data.AppData
 import com.shiftalarm.app.data.NormalAlarm
@@ -372,8 +368,11 @@ fun AddNormalAlarmDialog(onDone: (NormalAlarm?) -> Unit) {
                     label = { Text("標籤") }
                 )
                 Spacer(Modifier.height(8.dp))
-                Text("重複（唔揀＝一次性）", fontSize = 12.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("重複（唔揀＝一次性，可左右滑動看全部七日）", fontSize = 12.sp)
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
                     allDays.forEach { d ->
                         FilterChip(
                             selected = days.contains(d),
@@ -395,8 +394,6 @@ fun AddNormalAlarmDialog(onDone: (NormalAlarm?) -> Unit) {
 fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Unit) {
     val context = LocalContext.current
     val s = data.settings
-    var calendars by remember { mutableStateOf<List<CalInfo>>(emptyList()) }
-    LaunchedEffect(Unit) { calendars = CalendarReader.listCalendars(context) }
 
     LazyColumn(
         Modifier.fillMaxSize().padding(16.dp),
@@ -404,31 +401,23 @@ fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
     ) {
         item { Text("設定", fontSize = 22.sp, fontWeight = FontWeight.Bold) }
 
-        item { Text("日曆來源（唔揀＝全部日曆）", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
-        items(calendars) { cal ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(
-                    checked = s.calendarIds.contains(cal.id),
-                    onCheckedChange = { on ->
-                        persistThenSync { d ->
-                            d.copy(settings = d.settings.copy(
-                                calendarIds = if (on) d.settings.calendarIds + cal.id else d.settings.calendarIds - cal.id
-                            ))
-                        }
-                    }
-                )
-                Column {
-                    Text(cal.name)
-                    Text(cal.account, fontSize = 12.sp, color = Color.Gray)
-                }
-            }
-        }
-        if (calendars.isEmpty()) {
-            item {
+        item { Text("iCal 網址（更期來源）", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+        item {
+            var icalUrl by remember(s.icalUrl) { mutableStateOf(s.icalUrl) }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    "搵唔到日曆——請確認已授予「日曆」權限，同埋 Google Calendar 已經同步。",
-                    fontSize = 13.sp, color = MaterialTheme.colorScheme.error
+                    "貼上 Google Calendar 的「私人 iCal 網址」（齒輪設定 → 匯入和匯出／整合日曆 → 私人網址）。App 每小時自動抓取一次，唔需手動揀日曆來源。若已在「診斷」分頁匯入過 .ics 檔案，檔案優先。",
+                    fontSize = 12.sp
                 )
+                OutlinedTextField(
+                    value = icalUrl,
+                    onValueChange = { icalUrl = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("iCal 私人網址") }
+                )
+                Button(onClick = {
+                    persistThenSync { d -> d.copy(settings = d.settings.copy(icalUrl = icalUrl.trim())) }
+                }) { Text("儲存並立即同步") }
             }
         }
 
