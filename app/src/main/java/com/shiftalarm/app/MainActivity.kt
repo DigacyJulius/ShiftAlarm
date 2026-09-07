@@ -47,9 +47,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.shiftalarm.app.core.AlarmEntry
 import com.shiftalarm.app.core.AlarmScheduler
 import com.shiftalarm.app.core.SyncEngine
-import com.shiftalarm.app.data.AlarmEntry
 import com.shiftalarm.app.data.AppData
 import com.shiftalarm.app.data.Store
 import com.shiftalarm.app.ui.NormalAlarmsScreen
@@ -97,8 +97,24 @@ fun AppRoot() {
     val scope = rememberCoroutineScope()
     val data by remember { store.data }.collectAsStateWithLifecycle(initialValue = AppData())
     var tab by remember { mutableStateOf(0) }
+    var syncMessage by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(Unit) { SyncEngine.sync(context) }
+    fun doSync() {
+        scope.launch {
+            syncMessage = "同步中…"
+            val r = SyncEngine.sync(context)
+            syncMessage = when {
+                r.errors.isNotEmpty() ->
+                    "同步失敗：" + r.errors.joinToString("；")
+                r.total == 0 ->
+                    "同步完成，但排唔到任何鬧鐘。檢查：① 已建立地點設定檔？② 已授予日曆權限？③ 事件標題有冇地點關鍵字＋更份代號（例：cmc a）？"
+                else ->
+                    "同步完成：命中 " + r.matchedEvents + " 個更、跳過 " + r.offDays + " 個休息日，共排 " + r.total + " 粒鬧鐘"
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) { doSync() }
 
     fun persistThenSync(transform: (AppData) -> AppData) {
         scope.launch {
@@ -142,7 +158,8 @@ fun AppRoot() {
             when (tab) {
                 0 -> HomeScreen(
                     data = data,
-                    onSync = { scope.launch { SyncEngine.sync(context) } },
+                    syncMessage = syncMessage,
+                    onSync = { doSync() },
                     onTest = { scope.launch { scheduleTestAlarm(context, store) } }
                 )
                 1 -> ProfilesScreen(data, persistThenSync = ::persistThenSync)
@@ -177,7 +194,12 @@ fun relative(from: Long, to: Long): String {
 }
 
 @Composable
-fun HomeScreen(data: AppData, onSync: () -> Unit, onTest: () -> Unit) {
+fun HomeScreen(
+    data: AppData,
+    syncMessage: String?,
+    onSync: () -> Unit,
+    onTest: () -> Unit
+) {
     val now = System.currentTimeMillis()
     val upcoming = data.scheduled.filter { it.triggerAt > now }.sortedBy { it.triggerAt }
     val next = upcoming.firstOrNull()
@@ -208,6 +230,17 @@ fun HomeScreen(data: AppData, onSync: () -> Unit, onTest: () -> Unit) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(onClick = onSync) { Text("立即同步") }
                 OutlinedButton(onClick = onTest) { Text("測試鬧鐘（15秒後）") }
+            }
+        }
+        if (syncMessage != null) {
+            item {
+                Card(Modifier.fillMaxWidth()) {
+                    Text(
+                        syncMessage,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
             }
         }
         byDay.forEach { (day, entries) ->
