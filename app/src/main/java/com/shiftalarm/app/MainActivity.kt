@@ -111,7 +111,7 @@ fun AppRoot() {
                 data.profiles.isEmpty() ->
                     "同步完成，但排唔到任何鬧鐘：仲未有地點設定檔。去「地點設定檔」→ 新增（例：名稱 CMC、地點關鍵字 cmc），儲存後再撳同步。"
                 r.eventsRead == 0 ->
-                    "同步完成，但喺日曆讀到 0 個事件。檢查：① Google Calendar App 內睇唔睇到啲更期（要先同步落手機）？② 設定→日曆來源有冇揀錯？③ 更期係咪喺未來 " + data.settings.lookaheadDays + " 日內？（去「診斷」分頁睇詳情）"
+                    "同步完成，但讀到 0 個事件。檢查：① Google Calendar App 內睇唔睇到啲更期（要先同步落手機）？② 設定→日曆來源有冇揀錯？③ 更期係咪喺未來 " + data.settings.lookaheadDays + " 日內？（去「診斷」分頁睇詳情或改用 iCal 匯入）"
                 r.matchedEvents == 0 && r.offDays == 0 ->
                     "同步完成：讀到 " + r.eventsRead + " 個事件，但冇一個命中設定檔。檢查事件標題（例：cmc a）同設定檔嘅「地點關鍵字」係咪一致。（去「診斷」分頁睇事件標題）"
                 r.total == 0 ->
@@ -179,7 +179,7 @@ fun AppRoot() {
                 1 -> ProfilesScreen(data, persistThenSync = ::persistThenSync)
                 2 -> NormalAlarmsScreen(data, persistThenSync = ::persistThenSync)
                 3 -> SettingsScreen(data, persistThenSync = ::persistThenSync)
-                else -> DiagnosticsScreen(data)
+                else -> DiagnosticsScreen(data, persistThenSync = ::persistThenSync)
             }
         }
     }

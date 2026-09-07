@@ -1,5 +1,6 @@
 package com.shiftalarm.app.data
 
+import com.shiftalarm.app.calendar.CalEvent
 import kotlinx.serialization.Serializable
 
 enum class ShiftType(val label: String) {
@@ -44,6 +45,7 @@ data class NormalAlarm(
 @Serializable
 data class AppSettings(
     val calendarIds: Set<Long> = emptySet(),
+    val icalUrl: String = "",
     val morningStart: Int = 4,
     val morningEnd: Int = 12,
     val afternoonStart: Int = 12,
@@ -77,5 +79,6 @@ data class AppData(
     val settings: AppSettings = AppSettings(),
     val scheduled: List<AlarmEntry> = emptyList(),
     val dismissedGroups: Map<Long, Long> = emptyMap(),
-    val syncLogs: List<SyncLog> = emptyList()
+    val syncLogs: List<SyncLog> = emptyList(),
+    val icalEvents: List<CalEvent> = emptyList()
 )

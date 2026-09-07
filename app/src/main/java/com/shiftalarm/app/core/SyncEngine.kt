@@ -4,7 +4,9 @@ import android.content.Context
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import com.shiftalarm.app.calendar.CalEvent
 import com.shiftalarm.app.calendar.CalendarReader
+import com.shiftalarm.app.calendar.IcalSource
 import com.shiftalarm.app.data.AlarmEntry
 import com.shiftalarm.app.data.Store
 import com.shiftalarm.app.data.SyncLog
@@ -38,25 +40,40 @@ object SyncEngine {
 
         val workEntries = mutableListOf<AlarmEntry>()
         if (data.profiles.isNotEmpty()) {
-            try {
-                val from = now - TimeUnit.HOURS.toMillis(12)
-                val to = now + TimeUnit.DAYS.toMillis(data.settings.lookaheadDays.toLong())
-                val events = CalendarReader.queryEvents(context, from, to, data.settings)
-                eventsRead = events.size
-                for (ev in events) {
-                    val profile = RuleEngine.matchProfile(ev, data.profiles) ?: continue
-                    if (dismissed.containsKey(ev.instanceId)) continue
-                    if (RuleEngine.isOffDay(ev, profile)) {
-                        offDays++
-                        continue
+            val from = now - TimeUnit.HOURS.toMillis(12)
+            val to = now + TimeUnit.DAYS.toMillis(data.settings.lookaheadDays.toLong())
+            val events: List<CalEvent> = when {
+                data.icalEvents.isNotEmpty() ->
+                    data.icalEvents.filter { it.begin >= from && it.begin <= to }
+                data.settings.icalUrl.isNotBlank() -> {
+                    try {
+                        IcalSource.fetchEventsFromUrl(data.settings.icalUrl, from, to)
+                    } catch (e: Exception) {
+                        errors += "iCal \u6293\u53d6\u5931\u6557\uff1a" + (e.message ?: e.toString())
+                        emptyList()
                     }
-                    val alarms = RuleEngine.buildWorkAlarms(ev, profile, data.settings)
-                        .filter { it.triggerAt > now }
-                    if (alarms.isNotEmpty()) matchedEvents++
-                    workEntries += alarms
                 }
-            } catch (e: Exception) {
-                errors += "\u8b80\u53d6\u65e5\u66c6\u5931\u6557\uff1a" + (e.message ?: e.toString())
+                else -> {
+                    try {
+                        CalendarReader.queryEvents(context, from, to, data.settings)
+                    } catch (e: Exception) {
+                        errors += "\u8b80\u53d6\u65e5\u66c6\u5931\u6557\uff1a" + (e.message ?: e.toString())
+                        emptyList()
+                    }
+                }
+            }
+            eventsRead = events.size
+            for (ev in events) {
+                val profile = RuleEngine.matchProfile(ev, data.profiles) ?: continue
+                if (dismissed.containsKey(ev.instanceId)) continue
+                if (RuleEngine.isOffDay(ev, profile)) {
+                    offDays++
+                    continue
+                }
+                val alarms = RuleEngine.buildWorkAlarms(ev, profile, data.settings)
+                    .filter { it.triggerAt > now }
+                if (alarms.isNotEmpty()) matchedEvents++
+                workEntries += alarms
             }
         }
 
@@ -97,7 +114,7 @@ object SyncEngine {
 
         val logText = when {
             errors.isNotEmpty() -> "\u5931\u6557\uff1a" + errors.joinToString("\uff1b")
-            all.isEmpty() -> "\u6392\u5514\u5230\u9b27\u9418\uff08\u65e5\u66c6\u8b80\u5230 " + eventsRead + " \u500b\u4e8b\u4ef6\u3001\u547d\u4e2d " + matchedEvents + " \u500b\u66f4\u3001\u4f11\u606f\u65e5 " + offDays + "\uff09"
+            all.isEmpty() -> "\u6392\u5514\u5230\u9b27\u9418\uff08\u8b80\u5230 " + eventsRead + " \u500b\u4e8b\u4ef6\u3001\u547d\u4e2d " + matchedEvents + " \u500b\u66f4\u3001\u4f11\u606f\u65e5 " + offDays + "\uff09"
             else -> "\u6392\u54a9 " + all.size + " \u7c92\u9b27\u9418\uff08\u8b80\u5230 " + eventsRead + " \u500b\u4e8b\u4ef6\u3001\u547d\u4e2d " + matchedEvents + " \u500b\u66f4\u3001\u4f11\u606f\u65e5 " + offDays + "\uff09"
         }
         val newLogs = (listOf(SyncLog(System.currentTimeMillis(), logText)) + data.syncLogs).take(10)
