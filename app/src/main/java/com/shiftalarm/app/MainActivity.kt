@@ -47,11 +47,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.shiftalarm.app.core.AlarmEntry
 import com.shiftalarm.app.core.AlarmScheduler
 import com.shiftalarm.app.core.SyncEngine
+import com.shiftalarm.app.data.AlarmEntry
 import com.shiftalarm.app.data.AppData
 import com.shiftalarm.app.data.Store
+import com.shiftalarm.app.ui.NormalAlarmsScreen
+import com.shiftalarm.app.ui.ProfilesScreen
+import com.shiftalarm.app.ui.SettingsScreen
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -108,10 +111,30 @@ fun AppRoot() {
     Scaffold(
         bottomBar = {
             NavigationBar {
-                NavigationBarItem(tab == 0, { tab = 0 }, { Icon(Icons.Filled.Home, null) }, { Text("首頁") })
-                NavigationBarItem(tab == 1, { tab = 1 }, { Icon(Icons.Filled.Place, null) }, { Text("地點設定檔") })
-                NavigationBarItem(tab == 2, { tab = 2 }, { Icon(Icons.Filled.Alarm, null) }, { Text("一般鬧鐘") })
-                NavigationBarItem(tab == 3, { tab = 3 }, { Icon(Icons.Filled.Settings, null) }, { Text("設定") })
+                NavigationBarItem(
+                    selected = tab == 0,
+                    onClick = { tab = 0 },
+                    icon = { Icon(Icons.Filled.Home, null) },
+                    label = { Text("首頁") }
+                )
+                NavigationBarItem(
+                    selected = tab == 1,
+                    onClick = { tab = 1 },
+                    icon = { Icon(Icons.Filled.Place, null) },
+                    label = { Text("地點設定檔") }
+                )
+                NavigationBarItem(
+                    selected = tab == 2,
+                    onClick = { tab = 2 },
+                    icon = { Icon(Icons.Filled.Alarm, null) },
+                    label = { Text("一般鬧鐘") }
+                )
+                NavigationBarItem(
+                    selected = tab == 3,
+                    onClick = { tab = 3 },
+                    icon = { Icon(Icons.Filled.Settings, null) },
+                    label = { Text("設定") }
+                )
             }
         }
     ) { padding ->

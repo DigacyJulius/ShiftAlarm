@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package com.shiftalarm.app.ui
 
 import android.app.AlarmManager
@@ -143,13 +145,19 @@ fun ProfileEditScreen(
     ) {
         item { Text(if (isNew) "新增地點設定檔" else "編輯地點設定檔", fontSize = 20.sp, fontWeight = FontWeight.Bold) }
         item {
-            OutlinedTextField(name, { name = it }, label = { Text("地點名稱（例：中環分店）") }, Modifier.fillMaxWidth())
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("地點名稱（例：中環分店）") }
+            )
         }
         item {
             OutlinedTextField(
-                keywords, { keywords = it },
-                label = { Text("配對關鍵字（逗號分隔，比對事件地點＋標題）") },
-                Modifier.fillMaxWidth()
+                value = keywords,
+                onValueChange = { keywords = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("配對關鍵字（逗號分隔，比對事件地點＋標題）") }
             )
         }
         item { Text("早更設定", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
@@ -312,7 +320,12 @@ fun AddNormalAlarmDialog(onDone: (NormalAlarm?) -> Unit) {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 TimePicker(state = state)
                 Spacer(Modifier.height(8.dp))
-                OutlinedTextField(label, { label = it }, label = { Text("標籤") }, Modifier.fillMaxWidth())
+                OutlinedTextField(
+                    value = label,
+                    onValueChange = { label = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("標籤") }
+                )
                 Spacer(Modifier.height(8.dp))
                 Text("重複（唔揀＝一次性）", fontSize = 12.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
