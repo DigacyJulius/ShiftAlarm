@@ -44,8 +44,8 @@ data class NormalAlarm(
 
 @Serializable
 data class AppSettings(
-    val calendarIds: Set<Long> = emptySet(),
     val icalUrl: String = "",
+    val darkMode: String = "system",
     val morningStart: Int = 4,
     val morningEnd: Int = 12,
     val afternoonStart: Int = 12,
