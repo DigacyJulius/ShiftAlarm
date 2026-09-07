@@ -101,7 +101,9 @@ fun DiagnosticsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> 
                 .map { EventPreview(it.title, it.begin, it.calendarId) }
         } else if (data.settings.icalUrl.isNotBlank()) {
             try {
-                val evs = IcalSource.fetchEventsFromUrl(data.settings.icalUrl, from, to).sortedBy { it.begin }
+                val evs = withContext(Dispatchers.IO) {
+                    IcalSource.fetchEventsFromUrl(data.settings.icalUrl, from, to)
+                }.sortedBy { it.begin }
                 icalStatus = "✓ iCal 網址抓取成功：窗口內 " + evs.size + " 個事件"
                 previews = evs.take(200).map { EventPreview(it.title, it.begin, it.calendarId) }
             } catch (e: Exception) {
