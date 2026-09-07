@@ -125,7 +125,7 @@ object SyncEngine {
     }
 
     fun schedulePeriodicSync(context: Context) {
-        val req = PeriodicWorkRequestBuilder<SyncWorker>(6, TimeUnit.HOURS).build()
+        val req = PeriodicWorkRequestBuilder<SyncWorker>(1, TimeUnit.HOURS).build()
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             "shift_sync", ExistingPeriodicWorkPolicy.KEEP, req
         )
