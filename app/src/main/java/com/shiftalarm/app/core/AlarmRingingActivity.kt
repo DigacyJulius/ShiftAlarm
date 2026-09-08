@@ -172,6 +172,8 @@ class AlarmRingingActivity : ComponentActivity() {
         val now = System.currentTimeMillis()
         val kept: List<AlarmEntry>
         val dismissedGroups: Map<Long, Long>
+        val dismissedAlarmIds: Set<Long>
+        val dismissedAlarmMeta: Map<Long, String>
         if (entry.kind == "work" && !entry.isSnooze) {
             dismissedGroups = data.dismissedGroups + (entry.groupId to now)
             val removed = data.scheduled.filter {
@@ -180,12 +182,23 @@ class AlarmRingingActivity : ComponentActivity() {
             }
             removed.forEach { AlarmScheduler.cancel(this, it) }
             kept = data.scheduled.filterNot { removed.contains(it) }
+            dismissedAlarmIds = data.dismissedAlarmIds + removed.map { it.id }
+            dismissedAlarmMeta = data.dismissedAlarmMeta + removed.associate { it.id to it.label }
         } else {
             AlarmScheduler.cancel(this, entry)
             kept = data.scheduled.filterNot { it.id == entry.id }
             dismissedGroups = data.dismissedGroups
+            dismissedAlarmIds = data.dismissedAlarmIds
+            dismissedAlarmMeta = data.dismissedAlarmMeta
         }
-        store.save(data.copy(scheduled = kept, dismissedGroups = dismissedGroups))
+        store.save(
+            data.copy(
+                scheduled = kept,
+                dismissedGroups = dismissedGroups,
+                dismissedAlarmIds = dismissedAlarmIds,
+                dismissedAlarmMeta = dismissedAlarmMeta
+            )
+        )
     }
 
     override fun onDestroy() {
