@@ -23,6 +23,23 @@ jobs:
         with:
           gradle-version: '8.9'
 
+      - name: Cache debug keystore
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: shiftalarm-debug-keystore-v1
+
+      - name: Ensure debug keystore exists
+        run: |
+          mkdir -p ~/.android
+          if [ ! -f ~/.android/debug.keystore ]; then
+            keytool -genkeypair -v \
+              -keystore ~/.android/debug.keystore \
+              -storepass android -alias androiddebugkey \
+              -keypass android -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=ShiftAlarm Debug,O=ShiftAlarm,C=HK"
+          fi
+
       - name: Build debug APK
         run: gradle assembleDebug --no-daemon
 
