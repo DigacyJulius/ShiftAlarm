@@ -440,23 +440,6 @@ fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
         }
 
         item {
-            Text(
-                "更時段界線（僅用於冇更份代號命中時嘅後備判斷，24小時制）",
-                fontSize = 16.sp, fontWeight = FontWeight.Bold
-            )
-        }
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                IntField("早更開始（時）", s.morningStart) { v -> persistThenSync { d -> d.copy(settings = d.settings.copy(morningStart = v)) } }
-                IntField("早更結束（時）", s.morningEnd) { v -> persistThenSync { d -> d.copy(settings = d.settings.copy(morningEnd = v)) } }
-                IntField("午更開始（時）", s.afternoonStart) { v -> persistThenSync { d -> d.copy(settings = d.settings.copy(afternoonStart = v)) } }
-                IntField("午更結束（時）", s.afternoonEnd) { v -> persistThenSync { d -> d.copy(settings = d.settings.copy(afternoonEnd = v)) } }
-                IntField("晚更開始（時）", s.nightStart) { v -> persistThenSync { d -> d.copy(settings = d.settings.copy(nightStart = v)) } }
-                IntField("晚更結束（時）", s.nightEnd) { v -> persistThenSync { d -> d.copy(settings = d.settings.copy(nightEnd = v)) } }
-            }
-        }
-
-        item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 IntField("貪睡間隔（分鐘）", s.snoozeMinutes) { v -> persistThenSync { d -> d.copy(settings = d.settings.copy(snoozeMinutes = v)) } }
                 IntField("預排日數（日）", s.lookaheadDays) { v -> persistThenSync { d -> d.copy(settings = d.settings.copy(lookaheadDays = v)) } }
