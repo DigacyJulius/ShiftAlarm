@@ -527,6 +527,18 @@ fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
                         }) { Text("允許全螢幕鬧鐘通知") }
                     }
                 }
+
+                // DND / Notification Policy Access
+                val nmPolicy = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+                if (Build.VERSION.SDK_INT >= 23 && !nmPolicy.isNotificationPolicyAccessGranted) {
+                    Button(onClick = {
+                        runCatching {
+                            context.startActivity(
+                                Intent(android.provider.Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
+                            )
+                        }
+                    }) { Text("允許勿擾模式繞過") }
+                }
             }
         }
         item { Spacer(Modifier.height(16.dp)) }
