@@ -17,7 +17,7 @@ class AlarmForegroundService : Service() {
 
     private var wakeLock: PowerManager.WakeLock? = null
     private val handler = Handler(Looper.getMainLooper())
-    private var alarmId: Long = -1
+    private var alarmId: Long = -1L
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -40,12 +40,12 @@ class AlarmForegroundService : Service() {
         )
         val notif = NotificationCompat.Builder(this, AlarmRingingActivity.CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
-            .setContentTitle("\u9b27\u9418\u97ff\u8d77")
-            .setContentText("\u9ede\u6309\u67e5\u770b")
+            .setContentTitle("鬧鐘響起")
+            .setContentText("點按查看")
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setFullScreenIntent(fullPi, true)
-            .setAutoCancel(false) // Keep notification until explicitly dismissed
+            .setAutoCancel(false)
             .setOngoing(true)
             .build()
 
@@ -60,19 +60,15 @@ class AlarmForegroundService : Service() {
             }
         }
 
-        // Schedule activity launch with retry mechanism for doze mode
-        handler.postDelayed({
-            runCatching { 
-                startActivity(launch) 
-            }
-            // Keep service alive for a bit longer to ensure alarm handling
-            handler.postDelayed({
-                cleanupAndStop()
-            }, 30_000) // Keep service alive for 30 seconds
-        }, 1000) // Small delay to ensure foreground service is properly started
+        // The FullScreenIntent on the notification is the correct and reliable way
+        // to launch the ringing activity on modern Android (including Doze mode).
+        // We deliberately do NOT call startActivity() here.
 
-        // Don't stop immediately - let the delayed cleanup handle it
-        return START_STICKY // Restart if killed unexpectedly
+        handler.postDelayed({
+            cleanupAndStop()
+        }, 10_000)
+
+        return START_STICKY
     }
 
     private fun acquireWakeLock() {
@@ -81,10 +77,7 @@ class AlarmForegroundService : Service() {
             wakeLock = pm.newWakeLock(
                 PowerManager.PARTIAL_WAKE_LOCK or PowerManager.ON_AFTER_RELEASE,
                 "ShiftAlarm:AlarmWakeLock"
-            ).apply { 
-                // Acquire without timeout for critical alarm handling
-                acquire() 
-            }
+            ).apply { acquire() }
         }
     }
 
