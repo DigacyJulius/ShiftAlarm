@@ -1,6 +1,6 @@
 package com.shiftalarm.app.core
 
-import android.Manifest
+import android.app.AlarmManager
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
@@ -28,7 +28,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.app.NotificationManagerCompat
 
 @Composable
 fun PermissionGateScreen(onAllGranted: () -> Unit) {
@@ -37,30 +36,28 @@ fun PermissionGateScreen(onAllGranted: () -> Unit) {
 
     fun checkPermissions() {
         val missing = mutableListOf<String>()
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-        // Check notification policy (DND) access
-        if (Build.VERSION.SDK_INT >= 23 && !nm.isNotificationPolicyAccessGranted) {
-            missing.add("勿擾模式繞過 (Do Not Disturb)")
+        // 1. 鬧鐘和提醒 (Exact Alarm) - MOST IMPORTANT
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
+            missing.add("鬧鐘和提醒")
         }
 
-        // Check full screen intent permission (Android 14+)
-        if (Build.VERSION.SDK_INT >= 34 && !nm.canUseFullScreenIntent()) {
+        // 2. 勿擾模式繞過
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !nm.isNotificationPolicyAccessGranted) {
+            missing.add("勿擾模式繞過")
+        }
+
+        // 3. 全螢幕通知 (Android 14+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && !nm.canUseFullScreenIntent()) {
             missing.add("全螢幕鬧鐘通知")
         }
 
-        // Check battery optimization exemption
+        // 4. 電池優化豁免
         val pm = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
         if (!pm.isIgnoringBatteryOptimizations(context.packageName)) {
             missing.add("電池優化豁免")
-        }
-
-        // Check "Alarms & reminders" permission (Android 12+)
-        if (Build.VERSION.SDK_INT >= 31) {
-            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
-            if (!alarmManager.canScheduleExactAlarms()) {
-                missing.add("鬧鐘和提醒 (Alarms & Reminders)")
-            }
         }
 
         missingPermissions = missing
@@ -82,13 +79,13 @@ fun PermissionGateScreen(onAllGranted: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
-            "需要權限才能正常使用",
+            "需要重要權限",
             fontSize = 22.sp,
             style = MaterialTheme.typography.headlineSmall
         )
         Spacer(Modifier.height(16.dp))
         Text(
-            "為了確保鬧鐘能夠在鎖屏及勿擾模式下正常響起，請授予以下權限：",
+            "為了讓鬧鐘在 App 關閉或手機休眠時仍然正常響起，請授予以下權限：",
             textAlign = TextAlign.Center,
             fontSize = 14.sp
         )
@@ -97,7 +94,17 @@ fun PermissionGateScreen(onAllGranted: () -> Unit) {
         missingPermissions.forEach { perm ->
             Button(onClick = {
                 when (perm) {
-                    "勿擾模式繞過 (Do Not Disturb)" -> {
+                    "鬧鐘和提醒" -> {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            context.startActivity(
+                                Intent(
+                                    Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                                    Uri.parse("package:${context.packageName}")
+                                )
+                            )
+                        }
+                    }
+                    "勿擾模式繞過" -> {
                         context.startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
                     }
                     "全螢幕鬧鐘通知" -> {
@@ -116,21 +123,11 @@ fun PermissionGateScreen(onAllGranted: () -> Unit) {
                             )
                         )
                     }
-                    "鬧鐘和提醒 (Alarms & Reminders)" -> {
-                        if (Build.VERSION.SDK_INT >= 31) {
-                            context.startActivity(
-                                Intent(
-                                    Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
-                                    Uri.parse("package:${context.packageName}")
-                                )
-                            )
-                        }
-                    }
                 }
             }) {
                 Text("授予：$perm")
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(12.dp))
         }
 
         Spacer(Modifier.height(24.dp))
