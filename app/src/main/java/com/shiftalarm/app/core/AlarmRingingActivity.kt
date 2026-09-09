@@ -1,0 +1,247 @@
+package com.shiftalarm.app.core
+
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.Context
+import android.media.AudioAttributes
+import android.media.MediaPlayer
+import android.media.RingtoneManager
+import android.os.Build
+import android.os.Bundle
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
+import android.view.WindowManager
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.app.NotificationManagerCompat
+import com.shiftalarm.app.core.CountdownNotificationManager
+import com.shiftalarm.app.data.AlarmEntry
+import com.shiftalarm.app.data.Store
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+class AlarmRingingActivity : ComponentActivity() {
+
+    companion object {
+        const val CHANNEL_ID = "alarm_ringing"
+
+        fun ensureChannel(context: Context) {
+            val nm = context.getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            val ch = NotificationChannel(CHANNEL_ID, "\u9b27\u9418\u97ff\u9435", NotificationManager.IMPORTANCE_HIGH)
+            ch.setBypassDnd(true)
+            nm.createNotificationChannel(ch)
+        }
+    }
+
+    private var player: MediaPlayer? = null
+    private var vibrator: Vibrator? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        if (Build.VERSION.SDK_INT >= 27) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        } else {
+            @Suppress("DEPRECATION")
+            window.addFlags(
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+            )
+        }
+        @Suppress("DEPRECATION")
+        window.addFlags(WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD)
+
+        val id = intent.getLongExtra(AlarmReceiver.EXTRA_ID, -1L)
+        val entry = runBlocking {
+            Store(this@AlarmRingingActivity).data.first().scheduled.firstOrNull { it.id == id }
+        }
+        startRinging()
+
+        val timeText = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+        val label = entry?.label ?: "\u9b27\u9418"
+
+        setContent {
+            MaterialTheme {
+                RingingScreen(
+                    timeText = timeText,
+                    label = label,
+                    onSnooze = {
+                        runBlocking { snooze(id) }
+                        stopAndFinish(id)
+                    },
+                    onDismiss = {
+                        runBlocking { dismiss(id) }
+                        stopAndFinish(id)
+                    }
+                )
+            }
+        }
+    }
+
+    private fun stopAndFinish(id: Long) {
+        stopRinging()
+        runCatching { NotificationManagerCompat.from(this).cancel(id.toInt()) }
+        finish()
+    }
+
+    private fun startRinging() {
+        runCatching {
+            val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+            player = MediaPlayer().apply {
+                setDataSource(this@AlarmRingingActivity, uri)
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ALARM)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                )
+                isLooping = true
+                prepare()
+                start()
+            }
+        }
+        runCatching {
+            vibrator = if (Build.VERSION.SDK_INT >= 31) {
+                (getSystemService(VIBRATOR_MANAGER_SERVICE) as VibratorManager).defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                getSystemService(VIBRATOR_SERVICE) as Vibrator
+            }
+            vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 600, 400), 0))
+        }
+    }
+
+    private fun stopRinging() {
+        runCatching {
+            player?.stop()
+            player?.release()
+        }
+        player = null
+        runCatching { vibrator?.cancel() }
+        vibrator = null
+    }
+
+    private suspend fun snooze(id: Long) {
+        val store = Store(this)
+        val data = store.data.first()
+        val entry = data.scheduled.firstOrNull { it.id == id } ?: return
+        val nextId = ((data.scheduled
+            .filter { it.id >= 250_000_000L && it.id < 260_000_000L }
+            .maxOfOrNull { it.id } ?: 249_999_999L) + 1L)
+        val snoozeEntry = AlarmEntry(
+            id = nextId,
+            groupId = entry.groupId,
+            triggerAt = System.currentTimeMillis() + data.settings.snoozeMinutes * 60_000L,
+            label = entry.label,
+            kind = entry.kind,
+            isSnooze = true
+        )
+        val kept = data.scheduled.filterNot { it.id == id } + snoozeEntry
+        AlarmScheduler.cancel(this, entry)
+        AlarmScheduler.schedule(this, snoozeEntry)
+        store.save(data.copy(scheduled = kept))
+        
+        // Update countdown notification after snooze
+        CoroutineScope(Dispatchers.IO).launch {
+            val countdownManager = CountdownNotificationManager(this@AlarmRingingActivity)
+            countdownManager.checkAndShowCountdown()
+        }
+    }
+
+    private suspend fun dismiss(id: Long) {
+        val store = Store(this)
+        val data = store.data.first()
+        val entry = data.scheduled.firstOrNull { it.id == id } ?: return
+        val now = System.currentTimeMillis()
+        val kept: List<AlarmEntry>
+        val dismissedGroups: Map<Long, Long>
+        val dismissedAlarmIds: Set<Long>
+        val dismissedAlarmMeta: Map<Long, String>
+        if (entry.kind == "work" && !entry.isSnooze) {
+            dismissedGroups = data.dismissedGroups + (entry.groupId to now)
+            val removed = data.scheduled.filter {
+                it.id == entry.id ||
+                    (it.kind == "work" && it.groupId == entry.groupId && it.triggerAt > now)
+            }
+            removed.forEach { AlarmScheduler.cancel(this, it) }
+            kept = data.scheduled.filterNot { removed.contains(it) }
+            dismissedAlarmIds = data.dismissedAlarmIds + removed.map { it.id }
+            dismissedAlarmMeta = data.dismissedAlarmMeta + removed.associate { it.id to it.label }
+        } else {
+            AlarmScheduler.cancel(this, entry)
+            kept = data.scheduled.filterNot { it.id == entry.id }
+            dismissedGroups = data.dismissedGroups
+            dismissedAlarmIds = data.dismissedAlarmIds
+            dismissedAlarmMeta = data.dismissedAlarmMeta
+        }
+        store.save(
+            data.copy(
+                scheduled = kept,
+                dismissedGroups = dismissedGroups,
+                dismissedAlarmIds = dismissedAlarmIds,
+                dismissedAlarmMeta = dismissedAlarmMeta
+            )
+        )
+        
+        // Update countdown notification after dismissal
+        CoroutineScope(Dispatchers.IO).launch {
+            val countdownManager = CountdownNotificationManager(this@AlarmRingingActivity)
+            countdownManager.checkAndShowCountdown()
+        }
+    }
+
+    override fun onDestroy() {
+        stopRinging()
+        super.onDestroy()
+    }
+}
+
+@Composable
+fun RingingScreen(timeText: String, label: String, onSnooze: () -> Unit, onDismiss: () -> Unit) {
+    Box(
+        modifier = Modifier.fillMaxSize().background(Color(0xFF101014)),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(timeText, color = Color.White, fontSize = 72.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(12.dp))
+            Text(label, color = Color(0xFFCCCCCC), fontSize = 20.sp)
+            Spacer(Modifier.height(64.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                OutlinedButton(onClick = onSnooze) {
+                    Text("\u8caa\u7761", color = Color.White, fontSize = 18.sp)
+                }
+                Button(onClick = onDismiss) {
+                    Text("\u89e3\u9664", fontSize = 18.sp)
+                }
+            }
+        }
+    }
+}
