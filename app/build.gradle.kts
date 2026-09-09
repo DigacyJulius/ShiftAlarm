@@ -16,23 +16,27 @@ android {
         versionCode = 1
         versionName = "1.0"
     }
+
     signingConfigs {
         create("release") {
+            // Only used for release builds. The actual keystore should be stored securely outside the repo.
             storeFile = file("release.keystore")
-            storePassword = "shiftalarm123"
+            storePassword = findProperty("RELEASE_STORE_PASSWORD") as String? ?: "shiftalarm123"
             keyAlias = "shiftalarm"
-            keyPassword = "shiftalarm123"
+            keyPassword = findProperty("RELEASE_KEY_PASSWORD") as String? ?: "shiftalarm123"
         }
     }
+
     buildTypes {
         debug {
-            signingConfig = signingConfigs.getByName("release")
+            // Use default debug signing for local development
         }
         release {
             isMinifyEnabled = false
             signingConfig = signingConfigs.getByName("release")
         }
     }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
