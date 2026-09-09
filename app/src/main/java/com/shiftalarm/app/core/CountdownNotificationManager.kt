@@ -18,6 +18,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -109,7 +110,7 @@ class CountdownNotificationManager(private val context: Context) {
 
     private fun startCountdownUpdates(alarm: AlarmEntry) {
         updateJob = scope.launch {
-            while (this.isActive) {
+            while (isActive) {
                 val now = System.currentTimeMillis()
                 val remainingMillis = alarm.triggerAt - now
                 

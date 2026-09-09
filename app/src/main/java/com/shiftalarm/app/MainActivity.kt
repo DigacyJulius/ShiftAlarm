@@ -104,7 +104,7 @@ class MainActivity : ComponentActivity() {
         requestPermissions()
         
         // Check for upcoming alarms and show countdown notification if needed
-        lifecycle.coroutineScope.launch {
+        lifecycleScope.launch {
             val countdownManager = CountdownNotificationManager(this@MainActivity)
             countdownManager.checkAndShowCountdown()
         }
