@@ -18,6 +18,18 @@ class AlarmReceiver : BroadcastReceiver() {
 
         AlarmRingingActivity.ensureChannel(context)
 
+        // Path A: Try to launch the ringing activity directly (most reliable on Android 14+)
+        val activityIntent = Intent(context, AlarmRingingActivity::class.java).apply {
+            putExtra(EXTRA_ID, id)
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                Intent.FLAG_ACTIVITY_NO_USER_ACTION
+            )
+        }
+        runCatching { context.startActivity(activityIntent) }
+
+        // Path B: Also start the foreground service (posts notification + FullScreenIntent as fallback)
         val serviceIntent = Intent(context, AlarmForegroundService::class.java).apply {
             putExtra(EXTRA_ID, id)
         }

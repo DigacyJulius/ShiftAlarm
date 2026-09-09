@@ -16,9 +16,21 @@ android {
         versionCode = 1
         versionName = "1.0"
     }
+    signingConfigs {
+        create("release") {
+            storeFile = file("release.keystore")
+            storePassword = "shiftalarm123"
+            keyAlias = "shiftalarm"
+            keyPassword = "shiftalarm123"
+        }
+    }
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("release")
+        }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {
