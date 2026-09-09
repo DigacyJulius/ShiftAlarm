@@ -109,7 +109,7 @@ class CountdownNotificationManager(private val context: Context) {
 
     private fun startCountdownUpdates(alarm: AlarmEntry) {
         updateJob = scope.launch {
-            while (isActive) {
+            while (this.isActive) {
                 val now = System.currentTimeMillis()
                 val remainingMillis = alarm.triggerAt - now
                 
