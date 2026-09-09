@@ -21,7 +21,7 @@ object AlarmScheduler {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
     }
-    
+
     private fun pendingActivity(context: Context, entry: AlarmEntry): PendingIntent {
         val intent = Intent(context, AlarmRingingActivity::class.java).apply {
             putExtra(AlarmReceiver.EXTRA_ID, entry.id)
@@ -37,6 +37,12 @@ object AlarmScheduler {
 
     fun schedule(context: Context, entry: AlarmEntry) {
         val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+
+        // Critical: Check if we have permission to schedule exact alarms (Android 12+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !am.canScheduleExactAlarms()) {
+            android.util.Log.w("AlarmScheduler", "Cannot schedule exact alarm: SCHEDULE_EXACT_ALARM permission not granted")
+            return
+        }
         
         // For user-facing alarms (work and normal), use setAlarmClock for better doze mode support
         if (entry.kind in listOf("work", "normal") && !entry.isSnooze) {
@@ -48,15 +54,15 @@ object AlarmScheduler {
                 try {
                     am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, entry.triggerAt, pending(context, entry))
                 } catch (e2: SecurityException) {
-                    am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, entry.triggerAt, pending(context, entry))
+                    android.util.Log.e("AlarmScheduler", "Failed to schedule alarm", e2)
                 }
             }
         } else {
-            // For snooze and test alarms, use exact alarm
+            // Snooze and test alarms use exact alarm
             try {
                 am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, entry.triggerAt, pending(context, entry))
             } catch (e: SecurityException) {
-                am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, entry.triggerAt, pending(context, entry))
+                android.util.Log.e("AlarmScheduler", "Failed to schedule alarm", e)
             }
         }
     }

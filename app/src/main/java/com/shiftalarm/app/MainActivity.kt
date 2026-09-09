@@ -8,7 +8,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.lifecycle.lifecycleScope
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -58,6 +57,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.shiftalarm.app.core.AlarmScheduler
 import com.shiftalarm.app.core.CountdownNotificationManager
+import com.shiftalarm.app.core.PermissionGateScreen
 import com.shiftalarm.app.core.SyncEngine
 import com.shiftalarm.app.data.AlarmEntry
 import com.shiftalarm.app.data.AppData
@@ -73,53 +73,47 @@ import java.util.Date
 import java.util.Locale
 
 private val LightColors = lightColorScheme(
-    primary = Color(0xFF0061A4),
+    primary = Color(0xFF6750A4),
     onPrimary = Color.White,
-    secondary = Color(0xFF535F70),
-    tertiary = Color(0xFF6B5778),
-    background = Color(0xFFF8F9FF),
-    surface = Color(0xFFF8F9FF),
-    error = Color(0xFFBA1A1A)
+    secondary = Color(0xFF625B71),
 )
 
 private val DarkColors = darkColorScheme(
-    primary = Color(0xFF9ECAFF),
-    onPrimary = Color(0xFF003258),
-    secondary = Color(0xFFBBC7DB),
-    tertiary = Color(0xFFD6BEE4),
-    background = Color(0xFF101418),
-    surface = Color(0xFF101418),
-    error = Color(0xFFFFB4AB)
+    primary = Color(0xFFD0BCFF),
+    onPrimary = Color.Black,
+    secondary = Color(0xFFCCC2DC),
 )
 
 class MainActivity : ComponentActivity() {
-
-    private val permissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        SyncEngine.schedulePeriodicSync(this)
-        requestPermissions()
-        
+
+        val permissionLauncher = registerForActivityResult(
+            ActivityResultContracts.RequestMultiplePermissions()
+        ) { }
+
+        val needed = mutableListOf<String>()
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED) needed += Manifest.permission.POST_NOTIFICATIONS
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALENDAR)
+            != PackageManager.PERMISSION_GRANTED) needed += Manifest.permission.READ_CALENDAR
+
+        if (needed.isNotEmpty()) permissionLauncher.launch(needed.toTypedArray())
+
         // Check for upcoming alarms and show countdown notification if needed
         lifecycleScope.launch {
             val countdownManager = CountdownNotificationManager(this@MainActivity)
             countdownManager.checkAndShowCountdown()
         }
-        
-        setContent {
-            AppRoot()
-        }
-    }
 
-    private fun requestPermissions() {
-        if (Build.VERSION.SDK_INT >= 33) {
-            val missing = ContextCompat.checkSelfPermission(
-                this, Manifest.permission.POST_NOTIFICATIONS
-            ) != PackageManager.PERMISSION_GRANTED
-            if (missing) permissionLauncher.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
+        setContent {
+            var permissionsGranted by remember { mutableStateOf(false) }
+
+            if (!permissionsGranted) {
+                PermissionGateScreen(onAllGranted = { permissionsGranted = true })
+            } else {
+                AppRoot()
+            }
         }
     }
 }
@@ -128,119 +122,57 @@ class MainActivity : ComponentActivity() {
 fun AppRoot() {
     val context = LocalContext.current
     val store = remember { Store(context) }
-    val scope = rememberCoroutineScope()
     val data by remember { store.data }.collectAsStateWithLifecycle(initialValue = AppData())
     var tab by remember { mutableStateOf(0) }
     var syncMessage by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
 
-    val systemDark = isSystemInDarkTheme()
-    val darkTheme = when (data.settings.darkMode) {
-        "dark" -> true
-        "light" -> false
-        else -> systemDark
-    }
+    val dayFmt = remember { SimpleDateFormat("MM/dd (E)", Locale.TRADITIONAL_CHINESE) }
+    val timeFmt = remember { SimpleDateFormat("HH:mm", Locale.TRADITIONAL_CHINESE) }
 
     fun doSync() {
         scope.launch {
-            syncMessage = "同步中…"
-            val r = SyncEngine.sync(context)
-            syncMessage = when {
-                r.errors.isNotEmpty() ->
-                    "同步失敗：" + r.errors.joinToString("；")
-                data.profiles.isEmpty() ->
-                    "同步完成，但排唔到任何鬧鐘：仲未有地點設定檔。去「地點設定檔」→ 新增（例：名稱 CMC、地點關鍵字 cmc），儲存後再撳同步。"
-                data.settings.icalUrl.isBlank() && data.icalEvents.isEmpty() ->
-                    "同步完成，但未設定 iCal 網址或匯入檔案。去「設定」貼上 iCal 網址，或去「診斷」匯入 .ics 檔案。"
-                r.eventsRead == 0 ->
-                    "同步完成，但讀到 0 個事件。檢查：① iCal 網址有冇填對？② 更期係咪喺未來 " + data.settings.lookaheadDays + " 日內？（去「診斷」分頁睇詳情）"
-                r.matchedEvents == 0 && r.offDays == 0 ->
-                    "同步完成：讀到 " + r.eventsRead + " 個事件，但冇一個命中設定檔。檢查事件標題（例：cmc a）同設定檔嘅「地點關鍵字」係咪一致。（去「診斷」分頁睇事件標題）"
-                r.total == 0 ->
-                    "同步完成：命中 " + r.matchedEvents + " 個更、" + r.offDays + " 個休息日，但全部起身時間已過。"
-                else ->
-                    "同步完成：命中 " + r.matchedEvents + " 個更、跳過 " + r.offDays + " 個休息日，共排 " + r.total + " 粒鬧鐘"
-            }
+            SyncEngine.sync(context)
+            syncMessage = "已同步 ${java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))}"
+            kotlinx.coroutines.delay(2000)
+            syncMessage = null
         }
     }
 
     LaunchedEffect(Unit) { doSync() }
 
-    fun persistThenSync(transform: (AppData) -> AppData) {
-        scope.launch {
-            val current = store.data.first()
-            store.save(transform(current))
-            SyncEngine.sync(context)
-        }
-    }
-
-    fun deleteAlarm(entry: AlarmEntry) {
-        scope.launch {
-            val current = store.data.first()
-            val now = System.currentTimeMillis()
-            when (entry.kind) {
-                "work" -> {
-                    AlarmScheduler.cancel(context, entry)
-                    val kept = current.scheduled.filterNot { it.id == entry.id }
-                    store.save(
-                        current.copy(
-                            scheduled = kept,
-                            dismissedAlarmIds = current.dismissedAlarmIds + entry.id,
-                            dismissedAlarmMeta = current.dismissedAlarmMeta + (entry.id to entry.label)
-                        )
-                    )
-                }
-                "normal" -> {
-                    val related = current.scheduled.filter { it.kind == "normal" && it.groupId == entry.groupId }
-                    related.forEach { AlarmScheduler.cancel(context, it) }
-                    val kept = current.scheduled.filterNot { related.contains(it) }
-                    store.save(
-                        current.copy(
-                            scheduled = kept,
-                            normalAlarms = current.normalAlarms.filterNot { it.id == entry.groupId }
-                        )
-                    )
-                }
-                else -> {
-                    AlarmScheduler.cancel(context, entry)
-                    val kept = current.scheduled.filterNot { it.id == entry.id }
-                    store.save(current.copy(scheduled = kept))
-                }
-            }
-        }
-    }
-
-    MaterialTheme(colorScheme = if (darkTheme) DarkColors else LightColors) {
+    MaterialTheme(colorScheme = if (isSystemInDarkTheme()) DarkColors else LightColors) {
         Scaffold(
             bottomBar = {
                 NavigationBar {
                     NavigationBarItem(
                         selected = tab == 0,
                         onClick = { tab = 0 },
-                        icon = { Icon(Icons.Filled.Home, null) },
+                        icon = { Icon(Icons.Default.Home, null) },
                         label = { Text("首頁") }
                     )
                     NavigationBarItem(
                         selected = tab == 1,
                         onClick = { tab = 1 },
-                        icon = { Icon(Icons.Filled.Place, null) },
+                        icon = { Icon(Icons.Default.Place, null) },
                         label = { Text("地點設定檔") }
                     )
                     NavigationBarItem(
                         selected = tab == 2,
                         onClick = { tab = 2 },
-                        icon = { Icon(Icons.Filled.Alarm, null) },
+                        icon = { Icon(Icons.Default.Alarm, null) },
                         label = { Text("一般鬧鐘") }
                     )
                     NavigationBarItem(
                         selected = tab == 3,
                         onClick = { tab = 3 },
-                        icon = { Icon(Icons.Filled.Settings, null) },
+                        icon = { Icon(Icons.Default.Settings, null) },
                         label = { Text("設定") }
                     )
                     NavigationBarItem(
                         selected = tab == 4,
                         onClick = { tab = 4 },
-                        icon = { Icon(Icons.Filled.BugReport, null) },
+                        icon = { Icon(Icons.Default.BugReport, null) },
                         label = { Text("診斷") }
                     )
                 }
@@ -248,119 +180,88 @@ fun AppRoot() {
         ) { padding ->
             Box(Modifier.padding(padding)) {
                 when (tab) {
-                    0 -> HomeScreen(
-                        data = data,
-                        syncMessage = syncMessage,
-                        onSync = { doSync() },
-                        onTest = { scope.launch { scheduleTestAlarm(context, store) } },
-                        onDelete = { e -> deleteAlarm(e) }
-                    )
-                    1 -> ProfilesScreen(data, persistThenSync = ::persistThenSync)
-                    2 -> NormalAlarmsScreen(data, persistThenSync = ::persistThenSync)
-                    3 -> SettingsScreen(data, persistThenSync = ::persistThenSync)
-                    else -> DiagnosticsScreen(data, persistThenSync = ::persistThenSync)
+                    0 -> HomeScreen(data, onSync = { doSync() }, syncMessage)
+                    1 -> ProfilesScreen(data, onChange = { scope.launch { store.save(it) } })
+                    2 -> NormalAlarmsScreen(data, onChange = { scope.launch { store.save(it) } })
+                    3 -> SettingsScreen(data, onChange = { scope.launch { store.save(it) } })
+                    4 -> DiagnosticsScreen()
                 }
             }
         }
     }
 }
 
-suspend fun scheduleTestAlarm(context: Context, store: Store) {
-    val data = store.data.first()
-    val test = AlarmEntry(
-        id = 260_000_000L,
-        groupId = 0L,
-        triggerAt = System.currentTimeMillis() + 15_000L,
-        label = "測試鬧鐘",
-        kind = "test"
-    )
-    val oldTests = data.scheduled.filter { it.kind == "test" }
-    oldTests.forEach { AlarmScheduler.cancel(context, it) }
-    val kept = data.scheduled.filterNot { it.kind == "test" } + test
-    AlarmScheduler.schedule(context, test)
-    store.save(data.copy(scheduled = kept))
-}
-
-fun relative(from: Long, to: Long): String {
-    val diff = (to - from) / 60000L
-    val h = diff / 60
-    val m = diff % 60
-    return if (h > 0) "${h} 小時 ${m} 分鐘" else "${m} 分鐘"
-}
-
 @Composable
-fun HomeScreen(
-    data: AppData,
-    syncMessage: String?,
-    onSync: () -> Unit,
-    onTest: () -> Unit,
-    onDelete: (AlarmEntry) -> Unit
-) {
+fun HomeScreen(data: AppData, onSync: () -> Unit, syncMessage: String?) {
+    val context = LocalContext.current
     val now = System.currentTimeMillis()
     val upcoming = data.scheduled.filter { it.triggerAt > now }.sortedBy { it.triggerAt }
-    val next = upcoming.firstOrNull()
-    val dayFmt = remember { SimpleDateFormat("M月d日 (E)", Locale.TRADITIONAL_CHINESE) }
-    val timeFmt = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
-    val byDay = upcoming.groupBy { dayFmt.format(Date(it.triggerAt)) }
 
-    LazyColumn(
-        Modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        item {
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(20.dp)) {
-                    Text("下一個鬧鐘", fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
-                    if (next != null) {
-                        Text(timeFmt.format(Date(next.triggerAt)), fontSize = 54.sp, fontWeight = FontWeight.Bold)
-                        Text(next.label, fontSize = 16.sp)
-                        Text("將於 " + relative(now, next.triggerAt) + " 後響起", fontSize = 13.sp)
-                    } else {
-                        Spacer(Modifier.height(8.dp))
-                        Text("暫時未有排程鬧鐘。\n\n設定「地點設定檔」或「一般鬧鐘」之後，呢度會顯示下一個鬧鐘。")
-                    }
-                }
-            }
-        }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(onClick = onSync) { Text("立即同步") }
-                OutlinedButton(onClick = onTest) { Text("測試鬧鐘（15秒後）") }
-            }
+    Column(Modifier.fillMaxSize().padding(16.dp)) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("未來鬧鐘", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            OutlinedButton(onClick = onSync) { Text("立即同步") }
         }
         if (syncMessage != null) {
-            item {
-                Card(Modifier.fillMaxWidth()) {
-                    Text(
-                        syncMessage,
-                        fontSize = 13.sp,
-                        modifier = Modifier.padding(12.dp)
-                    )
-                }
-            }
+            Text(syncMessage, color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
         }
-        byDay.forEach { (day, entries) ->
-            item {
-                Spacer(Modifier.height(6.dp))
-                Text(day, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(8.dp))
+
+        if (upcoming.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("暫無即將響起的鬧鐘", color = Color.Gray)
             }
-            items(entries) { e ->
-                Card(Modifier.fillMaxWidth()) {
-                    Row(
-                        Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+        } else {
+            LazyColumn {
+                items(upcoming) { entry ->
+                    Card(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
                     ) {
-                        Column(Modifier.weight(1f)) {
-                            Text(timeFmt.format(Date(e.triggerAt)), fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                            Text(e.label, fontSize = 15.sp)
-                        }
-                        IconButton(onClick = { onDelete(e) }) {
-                            Icon(Icons.Filled.Delete, "刪除鬧鐘", tint = MaterialTheme.colorScheme.error)
+                        Row(
+                            Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(entry.label, fontWeight = FontWeight.Medium)
+                                Text("${dayFmt.format(Date(entry.triggerAt))} ${timeFmt.format(Date(entry.triggerAt))}")
+                            }
+                            IconButton(onClick = {
+                                AlarmScheduler.cancel(context, entry)
+                                val newData = data.copy(
+                                    scheduled = data.scheduled.filterNot { it.id == entry.id }
+                                )
+                                androidx.lifecycle.lifecycleScope.launch {
+                                    Store(context).save(newData)
+                                }
+                            }) {
+                                Icon(Icons.Default.Delete, contentDescription = "刪除")
+                            }
                         }
                     }
                 }
             }
         }
-        item { Spacer(Modifier.height(16.dp)) }
+
+        Spacer(Modifier.height(16.dp))
+        Button(
+            onClick = {
+                val test = AlarmEntry(
+                    id = System.currentTimeMillis(),
+                    triggerAt = System.currentTimeMillis() + 10_000,
+                    label = "測試鬧鐘",
+                    type = "test"
+                )
+                AlarmScheduler.schedule(context, test)
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("測試鬧鐘（10秒後）")
+        }
     }
 }

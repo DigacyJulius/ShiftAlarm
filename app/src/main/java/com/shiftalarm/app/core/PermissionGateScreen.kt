@@ -55,6 +55,14 @@ fun PermissionGateScreen(onAllGranted: () -> Unit) {
             missing.add("電池優化豁免")
         }
 
+        // Check "Alarms & reminders" permission (Android 12+)
+        if (Build.VERSION.SDK_INT >= 31) {
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+            if (!alarmManager.canScheduleExactAlarms()) {
+                missing.add("鬧鐘和提醒 (Alarms & Reminders)")
+            }
+        }
+
         missingPermissions = missing
 
         if (missing.isEmpty()) {
@@ -107,6 +115,16 @@ fun PermissionGateScreen(onAllGranted: () -> Unit) {
                                 Uri.parse("package:${context.packageName}")
                             )
                         )
+                    }
+                    "鬧鐘和提醒 (Alarms & Reminders)" -> {
+                        if (Build.VERSION.SDK_INT >= 31) {
+                            context.startActivity(
+                                Intent(
+                                    Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                                    Uri.parse("package:${context.packageName}")
+                                )
+                            )
+                        }
                     }
                 }
             }) {
