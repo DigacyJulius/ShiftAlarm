@@ -104,5 +104,14 @@ fun SettingsScreen(
             "注意：授予「鬧鐘和提醒」權限後，App 才會出現在「特殊權限 → 鬧鐘和提醒」列表中。",
             style = MaterialTheme.typography.bodySmall
         )
+
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "版本 " + runCatching {
+                context.packageManager.getPackageInfo(context.packageName, 0).versionName
+            }.getOrDefault("?"),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }

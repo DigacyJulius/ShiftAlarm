@@ -1,5 +1,6 @@
 package com.shiftalarm.app.core
 
+import android.app.AlarmManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -9,6 +10,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import com.shiftalarm.app.MainActivity
@@ -133,6 +135,22 @@ class AlarmStandbyService : Service() {
         )
         channel.description = "讓鬧鐘在背景保持運作的常駐通知"
         nm.createNotificationChannel(channel)
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent) {
+        // Some ROMs stop the service when the user swipes the app away from
+        // recents. Schedule an immediate restart so the standby watchdog
+        // comes back on its own.
+        runCatching {
+            val pi = PendingIntent.getService(
+                this, 1,
+                Intent(this, AlarmStandbyService::class.java),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val am = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            am.set(AlarmManager.ELAPSED_REALTIME, SystemClock.elapsedRealtime() + 1000, pi)
+        }
+        super.onTaskRemoved(rootIntent)
     }
 
     override fun onDestroy() {
