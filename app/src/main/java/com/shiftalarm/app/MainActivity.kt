@@ -152,7 +152,7 @@ fun AppRoot() {
                 data.settings.icalUrl.isBlank() && data.icalEvents.isEmpty() ->
                     "同步完成，但未設定 iCal 網址或匯入檔案。去「設定」貼上 iCal 網址，或去「診斷」匯入 .ics 檔案。"
                 r.eventsRead == 0 ->
-                    "同步完成，但讀到 0 個事件。檢查：① iCal 網址有冇填對？② 更期係咪喺未來 " + data.settings.lookaheadDays + " 日內？（去「診斷」分頁睇詳情）"
+                    "同步完成，但讀到 0 個事件。檢查：① iCal 網址有冇填對？② 更期係咪喺未來 " + maxOf(data.settings.lookaheadDays, 7) + " 日內？（去「診斷」分頁睇詳情）"
                 r.matchedEvents == 0 && r.offDays == 0 ->
                     "同步完成：讀到 " + r.eventsRead + " 個事件，但冇一個命中設定檔。檢查事件標題（例：cmc a）同設定檔嘅「地點關鍵字」係咪一致。（去「診斷」分頁睇事件標題）"
                 r.total == 0 ->
@@ -188,7 +188,8 @@ fun AppRoot() {
                         current.copy(
                             scheduled = kept,
                             dismissedAlarmIds = current.dismissedAlarmIds + entry.id,
-                            dismissedAlarmMeta = current.dismissedAlarmMeta + (entry.id to entry.label)
+                            dismissedAlarmMeta = current.dismissedAlarmMeta + (entry.id to entry.label),
+                            dismissedAlarmTimes = current.dismissedAlarmTimes + (entry.id to entry.triggerAt)
                         )
                     )
                 }

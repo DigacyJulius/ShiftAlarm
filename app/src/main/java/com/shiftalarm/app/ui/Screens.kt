@@ -394,6 +394,12 @@ fun AddNormalAlarmDialog(onDone: (NormalAlarm?) -> Unit) {
 fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Unit) {
     val context = LocalContext.current
     val s = data.settings
+    val now = System.currentTimeMillis()
+    // Deleted alarms whose original fire time has passed are hidden —
+    // e.g. a deleted 09:00 alarm disappears from this list at 09:01.
+    // Legacy entries without a recorded time are still shown.
+    val deletedList = data.dismissedAlarmMeta.entries.toList()
+        .filter { (data.dismissedAlarmTimes[it.key] ?: Long.MAX_VALUE) > now }
 
     LazyColumn(
         Modifier.fillMaxSize().padding(16.dp),
@@ -442,16 +448,16 @@ fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 IntField("貪睡間隔（分鐘）", s.snoozeMinutes) { v -> persistThenSync { d -> d.copy(settings = d.settings.copy(snoozeMinutes = v)) } }
-                IntField("預排日數（日）", s.lookaheadDays) { v -> persistThenSync { d -> d.copy(settings = d.settings.copy(lookaheadDays = v)) } }
+                IntField("預排日數（日，最少 7）", s.lookaheadDays) { v -> persistThenSync { d -> d.copy(settings = d.settings.copy(lookaheadDays = v.coerceAtLeast(7))) } }
             }
         }
 
         item { Text("已刪除鬧鐘管理", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
-        item { Text("撳「還原」會即刻重新排嗰粒鬧鐘（如果時間仲未過）。每次刪除／解除只會影響嗰一粒鬧鐘，同日其他鬧鐘唔會受影響。", fontSize = 12.sp) }
-        if (data.dismissedAlarmMeta.isEmpty() && data.dismissedAlarmIds.isEmpty() && data.dismissedGroups.isEmpty()) {
+        item { Text("撳「還原」會即刻重新排嗰粒鬧鐘（如果時間仲未過）。每次刪除／解除只會影響嗰一粒鬧鐘，同日其他鬧鐘唔會受影響。過咗原定時間嘅已刪鬧鐘會自動從呢度消失。", fontSize = 12.sp) }
+        if (deletedList.isEmpty()) {
             item { Text("暫時未有已刪除嘅更期鬧鐘。", fontSize = 12.sp) }
         }
-        items(data.dismissedAlarmMeta.entries.toList()) { entry ->
+        items(deletedList) { entry ->
             Card(Modifier.fillMaxWidth()) {
                 Row(
                     Modifier.padding(12.dp),
@@ -462,7 +468,8 @@ fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
                         persistThenSync { d ->
                             d.copy(
                                 dismissedAlarmIds = d.dismissedAlarmIds - entry.key,
-                                dismissedAlarmMeta = d.dismissedAlarmMeta - entry.key
+                                dismissedAlarmMeta = d.dismissedAlarmMeta - entry.key,
+                                dismissedAlarmTimes = d.dismissedAlarmTimes - entry.key
                             )
                         }
                     }) { Text("還原") }
@@ -477,6 +484,7 @@ fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
                             d.copy(
                                 dismissedAlarmIds = emptySet(),
                                 dismissedAlarmMeta = emptyMap(),
+                                dismissedAlarmTimes = emptyMap(),
                                 dismissedGroups = emptyMap()
                             )
                         }

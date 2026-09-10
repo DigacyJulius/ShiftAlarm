@@ -81,6 +81,7 @@ data class AppData(
     val dismissedGroups: Map<Long, Long> = emptyMap(),
     val dismissedAlarmIds: Set<Long> = emptySet(),
     val dismissedAlarmMeta: Map<Long, String> = emptyMap(),
+    val dismissedAlarmTimes: Map<Long, Long> = emptyMap(),
     val syncLogs: List<SyncLog> = emptyList(),
     val icalEvents: List<CalEvent> = emptyList()
 )

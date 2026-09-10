@@ -79,7 +79,7 @@ fun DiagnosticsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> 
     LaunchedEffect(Unit) {
         val now = System.currentTimeMillis()
         val from = now - 12L * 3600_000L
-        val to = now + data.settings.lookaheadDays.toLong() * 86400_000L
+        val to = now + maxOf(data.settings.lookaheadDays, 7).toLong() * 86400_000L
 
         if (data.icalEvents.isNotEmpty()) {
             previews = data.icalEvents.filter { it.begin >= from && it.begin <= to }

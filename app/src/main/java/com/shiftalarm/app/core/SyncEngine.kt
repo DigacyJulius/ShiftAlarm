@@ -33,6 +33,17 @@ object SyncEngine {
         val dismissed = data.dismissedGroups
             .filterValues { now - it < TimeUnit.HOURS.toMillis(48) }
         val dismissedIds = data.dismissedAlarmIds
+        // Deleted-alarm records whose original fire time has passed are no
+        // longer useful: prune them so the "deleted alarms" list and the
+        // restore buttons only ever show still-relevant entries. Entries
+        // without a recorded time (legacy data) are kept.
+        val expiredDeletes = data.dismissedAlarmTimes.filterValues { it <= now }.keys
+        val activeDeletedIds = dismissedIds - expiredDeletes
+        val activeDeletedMeta = data.dismissedAlarmMeta - expiredDeletes
+        val activeDeletedTimes = data.dismissedAlarmTimes - expiredDeletes
+        // Always look ahead at least 7 days so a full week of alarms is
+        // fetched and shown, even if the stored setting is lower.
+        val lookaheadDays = maxOf(data.settings.lookaheadDays, 7)
         val errors = mutableListOf<String>()
         var matchedEvents = 0
         var offDays = 0
@@ -45,11 +56,11 @@ object SyncEngine {
             // the user is relying on them to wake up.
             val retainedWork = data.scheduled.filter {
                 it.kind == "work" && it.triggerAt > now &&
-                    it.id !in dismissedIds && !dismissed.containsKey(it.groupId)
+                    it.id !in activeDeletedIds && !dismissed.containsKey(it.groupId)
             }
 
             val from = now - TimeUnit.HOURS.toMillis(12)
-            val to = now + TimeUnit.DAYS.toMillis(data.settings.lookaheadDays.toLong())
+            val to = now + TimeUnit.DAYS.toMillis(lookaheadDays.toLong())
             var readOk = true
             val events: List<CalEvent> = when {
                 data.icalEvents.isNotEmpty() ->
@@ -74,7 +85,7 @@ object SyncEngine {
                     continue
                 }
                 val alarms = RuleEngine.buildWorkAlarms(ev, profile, data.settings)
-                    .filter { it.triggerAt > now && it.id !in dismissedIds }
+                    .filter { it.triggerAt > now && it.id !in activeDeletedIds }
                 if (alarms.isNotEmpty()) matchedEvents++
                 workEntries += alarms
             }
@@ -101,7 +112,7 @@ object SyncEngine {
             // (250M..260M) or the test alarm id (260M), otherwise a
             // PendingIntent collision silently replaces an alarm.
             val baseId = 200_000_000L + (na.id % 5_000_000L) * 10L
-            for (d in 0..data.settings.lookaheadDays) {
+            for (d in 0..lookaheadDays) {
                 val cal = Calendar.getInstance()
                 cal.set(Calendar.HOUR_OF_DAY, na.hour)
                 cal.set(Calendar.MINUTE, na.minute)
@@ -140,7 +151,14 @@ object SyncEngine {
         }
         val newLogs = (listOf(SyncLog(System.currentTimeMillis(), logText)) + data.syncLogs).take(10)
 
-        val newData = data.copy(scheduled = all, dismissedGroups = dismissed, syncLogs = newLogs)
+        val newData = data.copy(
+            scheduled = all,
+            dismissedGroups = dismissed,
+            dismissedAlarmIds = activeDeletedIds,
+            dismissedAlarmMeta = activeDeletedMeta,
+            dismissedAlarmTimes = activeDeletedTimes,
+            syncLogs = newLogs
+        )
         store.save(newData)
 
         // Trigger countdown notification check after sync
