@@ -5,19 +5,33 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.media.AudioAttributes
+import android.media.MediaPlayer
+import android.media.RingtoneManager
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 
 class AlarmForegroundService : Service() {
 
+    companion object {
+        // Safety net: stop ringing after 10 minutes even if the user never
+        // interacts (matches typical system alarm behaviour).
+        private const val MAX_RINGING_MS = 10 * 60_000L
+    }
+
     private var wakeLock: PowerManager.WakeLock? = null
     private val handler = Handler(Looper.getMainLooper())
     private var alarmId: Long = -1L
+    private var player: MediaPlayer? = null
+    private var vibrator: Vibrator? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -29,6 +43,7 @@ class AlarmForegroundService : Service() {
         }
 
         acquireWakeLock()
+        startRinging()
 
         val launch = Intent(this, AlarmRingingActivity::class.java).apply {
             putExtra(AlarmReceiver.EXTRA_ID, alarmId)
@@ -60,15 +75,57 @@ class AlarmForegroundService : Service() {
             }
         }
 
-        // The FullScreenIntent on the notification is the correct and reliable way
-        // to launch the ringing activity on modern Android (including Doze mode).
-        // We deliberately do NOT call startActivity() here.
+        // The service owns the alarm sound. The full-screen intent launches the
+        // ringing activity when allowed; either way the alarm is audible even
+        // if the activity is blocked (background activity launch restrictions).
 
         handler.postDelayed({
             cleanupAndStop()
-        }, 10_000)
+        }, MAX_RINGING_MS)
 
         return START_STICKY
+    }
+
+    /**
+     * Play the default alarm sound (looping, USAGE_ALARM) and vibrate until the
+     * ringing activity dismisses/snoozes or the safety timeout fires.
+     */
+    private fun startRinging() {
+        runCatching {
+            val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+            player = MediaPlayer().apply {
+                setDataSource(this@AlarmForegroundService, uri)
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ALARM)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                )
+                isLooping = true
+                prepare()
+                start()
+            }
+        }
+        runCatching {
+            vibrator = if (Build.VERSION.SDK_INT >= 31) {
+                (getSystemService(VIBRATOR_MANAGER_SERVICE) as VibratorManager).defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                getSystemService(VIBRATOR_SERVICE) as Vibrator
+            }
+            vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 600, 400), 0))
+        }
+    }
+
+    private fun stopRinging() {
+        runCatching {
+            player?.stop()
+            player?.release()
+        }
+        player = null
+        runCatching { vibrator?.cancel() }
+        vibrator = null
     }
 
     private fun acquireWakeLock() {
@@ -77,7 +134,7 @@ class AlarmForegroundService : Service() {
             wakeLock = pm.newWakeLock(
                 PowerManager.PARTIAL_WAKE_LOCK or PowerManager.ON_AFTER_RELEASE,
                 "ShiftAlarm:AlarmWakeLock"
-            ).apply { acquire() }
+            ).apply { acquire(MAX_RINGING_MS) }
         }
     }
 
@@ -85,8 +142,10 @@ class AlarmForegroundService : Service() {
         runCatching { wakeLock?.release() }
         wakeLock = null
     }
-    
+
     private fun cleanupAndStop() {
+        handler.removeCallbacksAndMessages(null)
+        stopRinging()
         releaseWakeLock()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -94,7 +153,9 @@ class AlarmForegroundService : Service() {
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
+        stopRinging()
         releaseWakeLock()
+        stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
     }
 }

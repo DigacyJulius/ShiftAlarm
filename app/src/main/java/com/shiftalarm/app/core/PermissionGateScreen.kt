@@ -1,12 +1,16 @@
 package com.shiftalarm.app.core
 
+import android.Manifest
 import android.app.AlarmManager
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -17,6 +21,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -28,33 +33,53 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 
 @Composable
 fun PermissionGateScreen(onAllGranted: () -> Unit) {
     val context = LocalContext.current
     var missingPermissions by remember { mutableStateOf(listOf<String>()) }
+    var recheckTrigger by remember { mutableStateOf(0) }
+
+    val notifLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) {
+        // Re-evaluate everything once the dialog is answered.
+        recheckTrigger++
+    }
 
     fun checkPermissions() {
         val missing = mutableListOf<String>()
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-        // 1. 鬧鐘和提醒 (Exact Alarm) - MOST IMPORTANT
+        // 1. 通知權限 (Android 13+) - needed for the full-screen alarm alert
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            missing.add("通知權限")
+        }
+
+        // 2. 鬧鐘和提醒 (Exact Alarm) - MOST IMPORTANT
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
             missing.add("鬧鐘和提醒")
         }
 
-        // 2. 勿擾模式繞過
+        // 3. 勿擾模式繞過
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !nm.isNotificationPolicyAccessGranted) {
             missing.add("勿擾模式繞過")
         }
 
-        // 3. 全螢幕通知 (Android 14+)
+        // 4. 全螢幕通知 (Android 14+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && !nm.canUseFullScreenIntent()) {
             missing.add("全螢幕鬧鐘通知")
         }
 
-        // 4. 電池優化豁免
+        // 5. 電池優化豁免
         val pm = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
         if (!pm.isIgnoringBatteryOptimizations(context.packageName)) {
             missing.add("電池優化豁免")
@@ -69,6 +94,19 @@ fun PermissionGateScreen(onAllGranted: () -> Unit) {
 
     LaunchedEffect(Unit) {
         checkPermissions()
+    }
+
+    // Re-check automatically whenever the user returns from a system settings
+    // screen, so the gate clears itself without tapping the button.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, recheckTrigger) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                checkPermissions()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     Column(
@@ -94,6 +132,11 @@ fun PermissionGateScreen(onAllGranted: () -> Unit) {
         missingPermissions.forEach { perm ->
             Button(onClick = {
                 when (perm) {
+                    "通知權限" -> {
+                        if (Build.VERSION.SDK_INT >= 33) {
+                            notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    }
                     "鬧鐘和提醒" -> {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                             context.startActivity(

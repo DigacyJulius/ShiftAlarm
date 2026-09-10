@@ -3,14 +3,9 @@ package com.shiftalarm.app.core
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
-import android.media.AudioAttributes
-import android.media.MediaPlayer
-import android.media.RingtoneManager
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
-import android.os.VibrationEffect
-import android.os.Vibrator
-import android.os.VibratorManager
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -59,9 +54,6 @@ class AlarmRingingActivity : ComponentActivity() {
         }
     }
 
-    private var player: MediaPlayer? = null
-    private var vibrator: Vibrator? = null
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT >= 27) {
@@ -81,7 +73,8 @@ class AlarmRingingActivity : ComponentActivity() {
         val entry = runBlocking {
             Store(this@AlarmRingingActivity).data.first().scheduled.firstOrNull { it.id == id }
         }
-        startRinging()
+        // The alarm sound and vibration are owned by AlarmForegroundService,
+        // so this activity only provides the UI (dismiss / snooze).
 
         val timeText = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
         val label = entry?.label ?: "\u9b27\u9418"
@@ -105,47 +98,17 @@ class AlarmRingingActivity : ComponentActivity() {
     }
 
     private fun stopAndFinish(id: Long) {
-        stopRinging()
+        stopAlarmService()
         runCatching { NotificationManagerCompat.from(this).cancel(id.toInt()) }
         finish()
     }
 
-    private fun startRinging() {
+    private fun stopAlarmService() {
+        // stopService() is allowed even when the app is backgrounded (unlike
+        // startService()); the service cleans up in onDestroy().
         runCatching {
-            val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
-            player = MediaPlayer().apply {
-                setDataSource(this@AlarmRingingActivity, uri)
-                setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ALARM)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build()
-                )
-                isLooping = true
-                prepare()
-                start()
-            }
+            stopService(Intent(this, AlarmForegroundService::class.java))
         }
-        runCatching {
-            vibrator = if (Build.VERSION.SDK_INT >= 31) {
-                (getSystemService(VIBRATOR_MANAGER_SERVICE) as VibratorManager).defaultVibrator
-            } else {
-                @Suppress("DEPRECATION")
-                getSystemService(VIBRATOR_SERVICE) as Vibrator
-            }
-            vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 600, 400), 0))
-        }
-    }
-
-    private fun stopRinging() {
-        runCatching {
-            player?.stop()
-            player?.release()
-        }
-        player = null
-        runCatching { vibrator?.cancel() }
-        vibrator = null
     }
 
     private suspend fun snooze(id: Long) {
@@ -218,7 +181,12 @@ class AlarmRingingActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        stopRinging()
+        // Only stop the service-owned sound when the activity is really going
+        // away (back press / dismiss / snooze). On configuration changes
+        // (rotation) the activity is recreated, so the alarm must keep ringing.
+        if (isFinishing) {
+            stopAlarmService()
+        }
         super.onDestroy()
     }
 }

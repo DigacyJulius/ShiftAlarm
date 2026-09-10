@@ -1,13 +1,9 @@
 package com.shiftalarm.app
 
-import android.Manifest
 import android.content.Context
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.lifecycleScope
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -54,7 +50,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.shiftalarm.app.core.AlarmScheduler
 import com.shiftalarm.app.core.CountdownNotificationManager
@@ -95,38 +90,26 @@ private val DarkColors = darkColorScheme(
 
 class MainActivity : ComponentActivity() {
 
-    private val permissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         SyncEngine.schedulePeriodicSync(this)
-        requestPermissions()
-        
+
         // Check for upcoming alarms and show countdown notification if needed
         lifecycleScope.launch {
             val countdownManager = CountdownNotificationManager(this@MainActivity)
             countdownManager.checkAndShowCountdown()
         }
-        
+
         setContent {
             var permissionsGranted by remember { mutableStateOf(false) }
 
             if (!permissionsGranted) {
+                // Notification and special alarm permissions are all requested
+                // from the gate screen.
                 PermissionGateScreen(onAllGranted = { permissionsGranted = true })
             } else {
                 AppRoot()
             }
-        }
-    }
-
-    private fun requestPermissions() {
-        if (Build.VERSION.SDK_INT >= 33) {
-            val missing = ContextCompat.checkSelfPermission(
-                this, Manifest.permission.POST_NOTIFICATIONS
-            ) != PackageManager.PERMISSION_GRANTED
-            if (missing) permissionLauncher.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
         }
     }
 }
