@@ -41,7 +41,8 @@ class AlarmStandbyService : Service() {
     companion object {
         const val CHANNEL_ID = "alarm_standby"
         const val NOTIFICATION_ID = 100_000
-        private const val WATCHDOG_INTERVAL_MS = 15 * 60_000L
+        private const val TICK_MS = 60_000L
+        private const val TICKS_PER_WATCHDOG = 15 // re-register alarms every 15 ticks = 15 min
     }
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -57,10 +58,17 @@ class AlarmStandbyService : Service() {
         startInForeground()
 
         scope.launch {
+            var tick = 0
             while (isActive) {
-                runCatching { reRegisterAlarms() }
+                if (tick % TICKS_PER_WATCHDOG == 0) {
+                    runCatching { reRegisterAlarms() }
+                }
+                // Re-post every minute — Android 13+ lets the user swipe
+                // foreground-service notifications away; this brings ours
+                // back so it behaves like a true persistent notification.
                 runCatching { updateNotification() }
-                delay(WATCHDOG_INTERVAL_MS)
+                tick++
+                delay(TICK_MS)
             }
         }
 
