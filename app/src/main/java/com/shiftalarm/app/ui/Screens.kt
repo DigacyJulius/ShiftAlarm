@@ -447,6 +447,7 @@ fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
         }
 
         item { Text("已刪除鬧鐘管理", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+        item { Text("撳「還原」會即刻重新排嗰粒鬧鐘（如果時間仲未過）。每次刪除／解除只會影響嗰一粒鬧鐘，同日其他鬧鐘唔會受影響。", fontSize = 12.sp) }
         if (data.dismissedAlarmMeta.isEmpty() && data.dismissedAlarmIds.isEmpty() && data.dismissedGroups.isEmpty()) {
             item { Text("暫時未有已刪除嘅更期鬧鐘。", fontSize = 12.sp) }
         }

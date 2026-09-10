@@ -141,36 +141,12 @@ class AlarmRingingActivity : ComponentActivity() {
         val store = Store(this)
         val data = store.data.first()
         val entry = data.scheduled.firstOrNull { it.id == id } ?: return
-        val now = System.currentTimeMillis()
-        val kept: List<AlarmEntry>
-        val dismissedGroups: Map<Long, Long>
-        val dismissedAlarmIds: Set<Long>
-        val dismissedAlarmMeta: Map<Long, String>
-        if (entry.kind == "work" && !entry.isSnooze) {
-            dismissedGroups = data.dismissedGroups + (entry.groupId to now)
-            val removed = data.scheduled.filter {
-                it.id == entry.id ||
-                    (it.kind == "work" && it.groupId == entry.groupId && it.triggerAt > now)
-            }
-            removed.forEach { AlarmScheduler.cancel(this, it) }
-            kept = data.scheduled.filterNot { removed.contains(it) }
-            dismissedAlarmIds = data.dismissedAlarmIds + removed.map { it.id }
-            dismissedAlarmMeta = data.dismissedAlarmMeta + removed.associate { it.id to it.label }
-        } else {
-            AlarmScheduler.cancel(this, entry)
-            kept = data.scheduled.filterNot { it.id == entry.id }
-            dismissedGroups = data.dismissedGroups
-            dismissedAlarmIds = data.dismissedAlarmIds
-            dismissedAlarmMeta = data.dismissedAlarmMeta
-        }
-        store.save(
-            data.copy(
-                scheduled = kept,
-                dismissedGroups = dismissedGroups,
-                dismissedAlarmIds = dismissedAlarmIds,
-                dismissedAlarmMeta = dismissedAlarmMeta
-            )
-        )
+        // Dismiss only the alarm that actually rang. The group's other
+        // alarms (e.g. backups later in the day) keep their schedule and
+        // can be handled one by one when they fire.
+        AlarmScheduler.cancel(this, entry)
+        val kept = data.scheduled.filterNot { it.id == entry.id }
+        store.save(data.copy(scheduled = kept))
         
         // Update countdown notification after dismissal
         CoroutineScope(Dispatchers.IO).launch {

@@ -176,24 +176,19 @@ fun AppRoot() {
     fun deleteAlarm(entry: AlarmEntry) {
         scope.launch {
             val current = store.data.first()
-            val now = System.currentTimeMillis()
             when (entry.kind) {
                 "work" -> {
-                    // A shift schedules several alarms (primary + backups).
-                    // Deleting any of them must cancel the WHOLE group,
-                    // otherwise the remaining backups still ring and get
-                    // rebuilt by the next sync.
-                    val related = current.scheduled.filter {
-                        it.kind == "work" && it.groupId == entry.groupId
-                    }
-                    related.forEach { AlarmScheduler.cancel(context, it) }
-                    val kept = current.scheduled.filterNot { related.contains(it) }
+                    // Per-alarm deletion: only the tapped alarm is cancelled
+                    // and blocked from being rebuilt by the next sync. The
+                    // other alarms of that day (backups / other shifts) stay
+                    // untouched.
+                    AlarmScheduler.cancel(context, entry)
+                    val kept = current.scheduled.filterNot { it.id == entry.id }
                     store.save(
                         current.copy(
                             scheduled = kept,
-                            dismissedGroups = current.dismissedGroups + (entry.groupId to now),
-                            dismissedAlarmIds = current.dismissedAlarmIds + related.map { it.id },
-                            dismissedAlarmMeta = current.dismissedAlarmMeta + related.associate { it.id to it.label }
+                            dismissedAlarmIds = current.dismissedAlarmIds + entry.id,
+                            dismissedAlarmMeta = current.dismissedAlarmMeta + (entry.id to entry.label)
                         )
                     )
                 }
