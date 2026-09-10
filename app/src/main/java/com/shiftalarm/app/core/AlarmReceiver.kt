@@ -18,21 +18,26 @@ class AlarmReceiver : BroadcastReceiver() {
 
         AlarmRingingActivity.ensureChannel(context)
 
-        // Path A: Try to launch the ringing activity directly (most reliable on Android 14+)
-        val activityIntent = Intent(context, AlarmRingingActivity::class.java).apply {
-            putExtra(EXTRA_ID, id)
-            addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK or
-                Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                Intent.FLAG_ACTIVITY_NO_USER_ACTION
-            )
-        }
-        runCatching { context.startActivity(activityIntent) }
-
-        // Path B: Also start the foreground service (posts notification + FullScreenIntent as fallback)
+        // Path A: start the foreground service first so the alarm sound and the
+        // notification (with full-screen intent for the screen-off/locked case)
+        // kick in as fast as possible.
         val serviceIntent = Intent(context, AlarmForegroundService::class.java).apply {
             putExtra(EXTRA_ID, id)
         }
         runCatching { ContextCompat.startForegroundService(context, serviceIntent) }
+
+        // Path B: launch the ringing screen directly. With the "display over
+        // other apps" permission granted this pops up immediately even when the
+        // app is closed; without it Android may silently block the launch and
+        // the full-screen intent notification above takes over instead.
+        val activityIntent = Intent(context, AlarmRingingActivity::class.java).apply {
+            putExtra(EXTRA_ID, id)
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_NO_USER_ACTION
+            )
+        }
+        runCatching { context.startActivity(activityIntent) }
     }
 }

@@ -43,7 +43,6 @@ class AlarmForegroundService : Service() {
         }
 
         acquireWakeLock()
-        startRinging()
 
         val launch = Intent(this, AlarmRingingActivity::class.java).apply {
             putExtra(AlarmReceiver.EXTRA_ID, alarmId)
@@ -64,6 +63,8 @@ class AlarmForegroundService : Service() {
             .setOngoing(true)
             .build()
 
+        // Post the notification (and the full-screen intent) before preparing
+        // the media player, so the alert UI is not delayed by sound setup.
         runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 ServiceCompat.startForeground(
@@ -74,6 +75,8 @@ class AlarmForegroundService : Service() {
                 startForeground(alarmId.toInt(), notif)
             }
         }
+
+        startRinging()
 
         // The service owns the alarm sound. The full-screen intent launches the
         // ringing activity when allowed; either way the alarm is audible even

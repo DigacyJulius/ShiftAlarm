@@ -79,7 +79,13 @@ fun PermissionGateScreen(onAllGranted: () -> Unit) {
             missing.add("全螢幕鬧鐘通知")
         }
 
-        // 5. 電池優化豁免
+        // 5. 在其他應用上層顯示 - lets the ringing page pop up immediately
+        //    even when the app is closed and another app is in the foreground
+        if (!Settings.canDrawOverlays(context)) {
+            missing.add("在其他應用上層顯示")
+        }
+
+        // 6. 電池優化豁免
         val pm = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
         if (!pm.isIgnoringBatteryOptimizations(context.packageName)) {
             missing.add("電池優化豁免")
@@ -154,6 +160,14 @@ fun PermissionGateScreen(onAllGranted: () -> Unit) {
                         context.startActivity(
                             Intent(
                                 Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+                                Uri.parse("package:${context.packageName}")
+                            )
+                        )
+                    }
+                    "在其他應用上層顯示" -> {
+                        context.startActivity(
+                            Intent(
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                                 Uri.parse("package:${context.packageName}")
                             )
                         )
