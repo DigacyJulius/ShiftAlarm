@@ -133,8 +133,7 @@ class AlarmRingingActivity : ComponentActivity() {
         
         // Update countdown notification after snooze
         CoroutineScope(Dispatchers.IO).launch {
-            val countdownManager = CountdownNotificationManager(this@AlarmRingingActivity)
-            countdownManager.checkAndShowCountdown()
+            runCatching { CountdownNotificationManager.checkAndShowCountdown(this@AlarmRingingActivity) }
         }
     }
 
@@ -175,8 +174,7 @@ class AlarmRingingActivity : ComponentActivity() {
         
         // Update countdown notification after dismissal
         CoroutineScope(Dispatchers.IO).launch {
-            val countdownManager = CountdownNotificationManager(this@AlarmRingingActivity)
-            countdownManager.checkAndShowCountdown()
+            runCatching { CountdownNotificationManager.checkAndShowCountdown(this@AlarmRingingActivity) }
         }
     }
 

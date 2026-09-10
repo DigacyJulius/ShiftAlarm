@@ -1,6 +1,7 @@
 package com.shiftalarm.app
 
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -50,8 +51,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.shiftalarm.app.core.AlarmScheduler
+import com.shiftalarm.app.core.AlarmStandbyService
 import com.shiftalarm.app.core.CountdownNotificationManager
 import com.shiftalarm.app.core.PermissionGateScreen
 import com.shiftalarm.app.core.SyncEngine
@@ -94,10 +97,17 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         SyncEngine.schedulePeriodicSync(this)
 
+        // Keep the 24/7 standby service (persistent notification + alarm
+        // watchdog) running — it survives the app being swiped away.
+        runCatching {
+            ContextCompat.startForegroundService(
+                this, Intent(this, AlarmStandbyService::class.java)
+            )
+        }
+
         // Check for upcoming alarms and show countdown notification if needed
         lifecycleScope.launch {
-            val countdownManager = CountdownNotificationManager(this@MainActivity)
-            countdownManager.checkAndShowCountdown()
+            CountdownNotificationManager.checkAndShowCountdown(this@MainActivity)
         }
 
         setContent {
@@ -169,13 +179,21 @@ fun AppRoot() {
             val now = System.currentTimeMillis()
             when (entry.kind) {
                 "work" -> {
-                    AlarmScheduler.cancel(context, entry)
-                    val kept = current.scheduled.filterNot { it.id == entry.id }
+                    // A shift schedules several alarms (primary + backups).
+                    // Deleting any of them must cancel the WHOLE group,
+                    // otherwise the remaining backups still ring and get
+                    // rebuilt by the next sync.
+                    val related = current.scheduled.filter {
+                        it.kind == "work" && it.groupId == entry.groupId
+                    }
+                    related.forEach { AlarmScheduler.cancel(context, it) }
+                    val kept = current.scheduled.filterNot { related.contains(it) }
                     store.save(
                         current.copy(
                             scheduled = kept,
-                            dismissedAlarmIds = current.dismissedAlarmIds + entry.id,
-                            dismissedAlarmMeta = current.dismissedAlarmMeta + (entry.id to entry.label)
+                            dismissedGroups = current.dismissedGroups + (entry.groupId to now),
+                            dismissedAlarmIds = current.dismissedAlarmIds + related.map { it.id },
+                            dismissedAlarmMeta = current.dismissedAlarmMeta + related.associate { it.id to it.label }
                         )
                     )
                 }
@@ -196,6 +214,8 @@ fun AppRoot() {
                     store.save(current.copy(scheduled = kept))
                 }
             }
+            // Make the countdown / standby notifications reflect the deletion
+            runCatching { CountdownNotificationManager.checkAndShowCountdown(context) }
         }
     }
 
@@ -269,6 +289,7 @@ suspend fun scheduleTestAlarm(context: Context, store: Store) {
     val kept = data.scheduled.filterNot { it.kind == "test" } + test
     AlarmScheduler.schedule(context, test)
     store.save(data.copy(scheduled = kept))
+    runCatching { CountdownNotificationManager.checkAndShowCountdown(context) }
 }
 
 fun relative(from: Long, to: Long): String {

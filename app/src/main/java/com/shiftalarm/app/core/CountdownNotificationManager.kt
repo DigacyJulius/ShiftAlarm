@@ -17,6 +17,8 @@ import com.shiftalarm.app.data.Store
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -25,68 +27,73 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
-class CountdownNotificationManager(private val context: Context) {
+/**
+ * Singleton: shows a silent countdown notification for the next alarm within
+ * 10 minutes. The update loop re-reads the stored schedule every tick, so a
+ * deleted alarm's notification disappears immediately instead of counting
+ * down to a fire time that no longer exists.
+ */
+object CountdownNotificationManager {
 
-    companion object {
-        const val CHANNEL_ID = "upcoming_alarm"
-        const val NOTIFICATION_ID = 99999
-        private const val COUNTDOWN_THRESHOLD_MINUTES = 10L
-    }
+    const val CHANNEL_ID = "upcoming_alarm"
+    const val NOTIFICATION_ID = 99999
+    private const val COUNTDOWN_THRESHOLD_MINUTES = 10L
 
     private val handler = Handler(Looper.getMainLooper())
-    private val scope = CoroutineScope(Dispatchers.IO)
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var updateJob: Job? = null
-    private var currentAlarm: AlarmEntry? = null
-    private val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    private var appContext: Context? = null
 
-    init {
-        ensureChannel()
+    private fun contextOf(context: Context): Context {
+        if (appContext == null) appContext = context.applicationContext
+        return appContext!!
     }
 
-    private fun ensureChannel() {
+    private fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "\u5373\u5c07\u9b27\u9418",
+                "即將鬧鐘",
                 NotificationManager.IMPORTANCE_LOW
             )
-            channel.description = "\u986f\u793a\u5373\u5c07\u97ff\u8d77\u7684\u9b27\u9418"
+            channel.description = "提示即將響起的鬧鐘"
             nm.createNotificationChannel(channel)
         }
     }
 
-    suspend fun checkAndShowCountdown() {
+    suspend fun checkAndShowCountdown(context: Context) {
+        val c = contextOf(context)
+        ensureChannel(c)
+
         // Cancel any existing update job
         updateJob?.cancel()
-        
-        val store = Store(context)
-        val data = store.data.first()
+
+        val data = Store(c).data.first()
         val now = System.currentTimeMillis()
         val threshold = now + TimeUnit.MINUTES.toMillis(COUNTDOWN_THRESHOLD_MINUTES)
-        
+
         // Find the next upcoming alarm within 10 minutes
         val nextAlarm = data.scheduled
             .filter { it.triggerAt > now && it.triggerAt <= threshold }
             .minByOrNull { it.triggerAt }
-            
+
         if (nextAlarm != null) {
-            currentAlarm = nextAlarm
-            showOrUpdateNotification(nextAlarm, now)
-            startCountdownUpdates(nextAlarm)
+            showOrUpdateNotification(c, nextAlarm, now)
+            startCountdownUpdates(c, nextAlarm)
         } else {
-            currentAlarm = null
             cancelNotification()
         }
     }
 
-    private fun showOrUpdateNotification(alarm: AlarmEntry, now: Long) {
+    private fun showOrUpdateNotification(context: Context, alarm: AlarmEntry, now: Long) {
         val remainingMillis = alarm.triggerAt - now
         val remainingMinutes = TimeUnit.MILLISECONDS.toMinutes(remainingMillis)
         val remainingSeconds = TimeUnit.MILLISECONDS.toSeconds(remainingMillis) % 60
-        
+
         val timeText = String.format(Locale.getDefault(), "%02d:%02d", remainingMinutes, remainingSeconds)
         val alarmTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(alarm.triggerAt))
-        
+
         val contentIntent = PendingIntent.getActivity(
             context,
             0,
@@ -96,43 +103,45 @@ class CountdownNotificationManager(private val context: Context) {
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher)
-            .setContentTitle("\u9b27\u9418\u5373\u5c07\u97ff\u8d77")
-            .setContentText("${alarm.label} \u2022 $timeText (\u5269\u9918)")
-            .setSubText("\u70ba ${alarmTime} \u7684\u9b27\u9418\u5099\u8a08")
+            .setContentTitle("鬧鐘即將響起")
+            .setContentText("${alarm.label} • $timeText (剩餘)")
+            .setSubText("為 $alarmTime 的鬧鐘備計")
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setContentIntent(contentIntent)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .build()
 
-        NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
+        runCatching { NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification) }
     }
 
-    private fun startCountdownUpdates(alarm: AlarmEntry) {
+    private fun startCountdownUpdates(context: Context, alarm: AlarmEntry) {
+        updateJob?.cancel()
         updateJob = scope.launch {
             while (isActive) {
                 val now = System.currentTimeMillis()
                 val remainingMillis = alarm.triggerAt - now
-                
+
                 if (remainingMillis <= 0) {
                     // Alarm should have fired, cancel notification
                     cancelNotification()
                     break
                 }
-                
-                if (remainingMillis <= TimeUnit.MINUTES.toMillis(COUNTDOWN_THRESHOLD_MINUTES)) {
-                    // Update notification on main thread
-                    handler.post {
-                        showOrUpdateNotification(alarm, now)
-                    }
-                    
-                    // Wait 1 second before next update (but don't update too frequently)
-                    kotlinx.coroutines.delay(1000)
-                } else {
-                    // Alarm is no longer in countdown range
+
+                // The alarm may have been deleted or changed while counting
+                // down — re-check the stored schedule every tick so the
+                // notification reflects reality.
+                val stillScheduled = Store(context).data.first()
+                    .scheduled.any { it.id == alarm.id }
+                if (!stillScheduled) {
                     cancelNotification()
                     break
                 }
+
+                handler.post {
+                    showOrUpdateNotification(context, alarm, now)
+                }
+                delay(1000)
             }
         }
     }
@@ -140,11 +149,7 @@ class CountdownNotificationManager(private val context: Context) {
     private fun cancelNotification() {
         updateJob?.cancel()
         updateJob = null
-        currentAlarm = null
-        NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID)
-    }
-
-    fun onDestroy() {
-        cancelNotification()
+        val c = appContext ?: return
+        runCatching { NotificationManagerCompat.from(c).cancel(NOTIFICATION_ID) }
     }
 }

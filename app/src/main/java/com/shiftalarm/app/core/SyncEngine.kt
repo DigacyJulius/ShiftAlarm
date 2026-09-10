@@ -144,10 +144,7 @@ object SyncEngine {
         store.save(newData)
 
         // Trigger countdown notification check after sync
-        runCatching {
-            val countdownManager = CountdownNotificationManager(context)
-            countdownManager.checkAndShowCountdown()
-        }
+        runCatching { CountdownNotificationManager.checkAndShowCountdown(context) }
 
         SyncResult(all.size, matchedEvents, offDays, eventsRead, errors, all.firstOrNull())
     }

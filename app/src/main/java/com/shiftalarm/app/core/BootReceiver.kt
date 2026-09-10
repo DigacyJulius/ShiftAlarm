@@ -3,6 +3,7 @@ package com.shiftalarm.app.core
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import androidx.core.content.ContextCompat
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
@@ -37,5 +38,13 @@ class BootReceiver : BroadcastReceiver() {
         WorkManager.getInstance(context).enqueueUniqueWork(
             "boot_sync", ExistingWorkPolicy.KEEP, req
         )
+
+        // Also bring the 24/7 standby service (persistent notification +
+        // alarm watchdog) back up after a reboot.
+        runCatching {
+            ContextCompat.startForegroundService(
+                context, Intent(context, AlarmStandbyService::class.java)
+            )
+        }
     }
 }
