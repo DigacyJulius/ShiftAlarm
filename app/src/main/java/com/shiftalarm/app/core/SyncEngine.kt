@@ -40,8 +40,17 @@ object SyncEngine {
 
         val workEntries = mutableListOf<AlarmEntry>()
         if (data.profiles.isNotEmpty()) {
+            // Work alarms scheduled by a previous sync that are still in the
+            // future. A failed or suspicious re-sync must NEVER cancel them —
+            // the user is relying on them to wake up.
+            val retainedWork = data.scheduled.filter {
+                it.kind == "work" && it.triggerAt > now &&
+                    it.id !in dismissedIds && !dismissed.containsKey(it.groupId)
+            }
+
             val from = now - TimeUnit.HOURS.toMillis(12)
             val to = now + TimeUnit.DAYS.toMillis(data.settings.lookaheadDays.toLong())
+            var readOk = true
             val events: List<CalEvent> = when {
                 data.icalEvents.isNotEmpty() ->
                     data.icalEvents.filter { it.begin >= from && it.begin <= to }
@@ -49,7 +58,8 @@ object SyncEngine {
                     try {
                         IcalSource.fetchEventsFromUrl(data.settings.icalUrl, from, to)
                     } catch (e: Exception) {
-                        errors += "iCal \u6293\u53d6\u5931\u6557\uff1a" + (e.message ?: e.toString())
+                        errors += "iCal 抓取失敗：" + (e.message ?: e.toString())
+                        readOk = false
                         emptyList()
                     }
                 }
@@ -68,11 +78,29 @@ object SyncEngine {
                 if (alarms.isNotEmpty()) matchedEvents++
                 workEntries += alarms
             }
+
+            // If the roster could not be read, or a URL fetch came back
+            // suspiciously empty (e.g. a server glitch returning an empty
+            // calendar), keep the previously scheduled work alarms. Only a
+            // healthy read may replace or remove them.
+            val fromUrl = data.icalEvents.isEmpty() && data.settings.icalUrl.isNotBlank()
+            val suspiciousEmpty = fromUrl && readOk && eventsRead == 0
+            if ((!readOk || suspiciousEmpty) && retainedWork.isNotEmpty()) {
+                val keep = retainedWork.filter { w -> workEntries.none { it.id == w.id } }
+                workEntries += keep
+                errors += if (readOk)
+                    "iCal 讀到 0 個事件，保留原有 " + keep.size + " 粒工作鬧鐘"
+                else
+                    "網絡讀取失敗，保留原有 " + keep.size + " 粒工作鬧鐘"
+            }
         }
 
         val normalEntries = mutableListOf<AlarmEntry>()
         for (na in data.normalAlarms.filter { it.enabled }) {
-            val baseId = 200_000_000L + (na.id % 10_000_000L) * 10L
+            // ID range 200M..250M — must NOT overlap the snooze range
+            // (250M..260M) or the test alarm id (260M), otherwise a
+            // PendingIntent collision silently replaces an alarm.
+            val baseId = 200_000_000L + (na.id % 5_000_000L) * 10L
             for (d in 0..data.settings.lookaheadDays) {
                 val cal = Calendar.getInstance()
                 cal.set(Calendar.HOUR_OF_DAY, na.hour)
@@ -85,13 +113,13 @@ object SyncEngine {
                 if (na.days.isEmpty()) {
                     normalEntries += AlarmEntry(
                         baseId + d.coerceAtMost(9), na.id, t,
-                        na.label.ifEmpty { "\u4e00\u822c\u9b27\u9418" }, "normal"
+                        na.label.ifEmpty { "一般鬧鐘" }, "normal"
                     )
                     break
                 } else if (na.days.contains(cal.get(Calendar.DAY_OF_WEEK))) {
                     normalEntries += AlarmEntry(
                         baseId + d.coerceAtMost(9), na.id, t,
-                        na.label.ifEmpty { "\u4e00\u822c\u9b27\u9418" }, "normal"
+                        na.label.ifEmpty { "一般鬧鐘" }, "normal"
                     )
                 }
             }
@@ -106,21 +134,21 @@ object SyncEngine {
         for (e in all) AlarmScheduler.schedule(context, e)
 
         val logText = when {
-            errors.isNotEmpty() -> "\u5931\u6557\uff1a" + errors.joinToString("\uff1b")
-            all.isEmpty() -> "\u6392\u5514\u5230\u9b27\u9418\uff08\u8b80\u5230 " + eventsRead + " \u500b\u4e8b\u4ef6\u3001\u547d\u4e2d " + matchedEvents + " \u500b\u66f4\u3001\u4f11\u606f\u65e5 " + offDays + "\uff09"
-            else -> "\u6392\u5497 " + all.size + " \u7c92\u9b27\u9418\uff08\u8b80\u5230 " + eventsRead + " \u500b\u4e8b\u4ef6\u3001\u547d\u4e2d " + matchedEvents + " \u500b\u66f4\u3001\u4f11\u606f\u65e5 " + offDays + "\uff09"
+            errors.isNotEmpty() -> "失敗：" + errors.joinToString("；")
+            all.isEmpty() -> "排唔到鬧鐘（讀到 " + eventsRead + " 個事件、命中 " + matchedEvents + " 個更、休息日 " + offDays + "）"
+            else -> "排咗 " + all.size + " 粒鬧鐘（讀到 " + eventsRead + " 個事件、命中 " + matchedEvents + " 個更、休息日 " + offDays + "）"
         }
         val newLogs = (listOf(SyncLog(System.currentTimeMillis(), logText)) + data.syncLogs).take(10)
 
         val newData = data.copy(scheduled = all, dismissedGroups = dismissed, syncLogs = newLogs)
         store.save(newData)
-        
+
         // Trigger countdown notification check after sync
         runCatching {
             val countdownManager = CountdownNotificationManager(context)
             countdownManager.checkAndShowCountdown()
         }
-        
+
         SyncResult(all.size, matchedEvents, offDays, eventsRead, errors, all.firstOrNull())
     }
 

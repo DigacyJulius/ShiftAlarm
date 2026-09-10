@@ -42,38 +42,34 @@ object AlarmScheduler {
         Build.VERSION.SDK_INT < Build.VERSION_CODES.S || am.canScheduleExactAlarms()
 
     /**
-     * Schedule an alarm so it fires even when the app is closed and the device
+     * Schedule an alarm that fires even when the app is closed and the device
      * is in Doze.
      *
-     * - User-facing alarms (work/normal) always use [AlarmManager.setAlarmClock],
-     *   which needs no special permission, fires reliably in Doze and shows the
-     *   system alarm indicator.
-     * - Snooze/test alarms prefer an exact alarm when the "Alarms & reminders"
-     *   permission is granted, and fall back to setAlarmClock when it is not —
-     *   a slightly less precise alarm is always better than silently dropping it.
+     * All alarms use setExactAndAllowWhileIdle() — the standard alarm API,
+     * gated on the "Alarms & reminders" permission (enforced by the permission
+     * gate) and proven to work by the test alarm. If the permission is missing
+     * or revoked mid-flight, fall back to setAlarmClock(), which needs no
+     * special permission and still fires in Doze — but is only a fallback,
+     * because some OEM builds do not reliably honour several concurrent
+     * alarm-clock registrations from the same app. Either way, the alarm is
+     * never silently dropped.
      */
     fun schedule(context: Context, entry: AlarmEntry) {
         val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
-        val userFacing = entry.kind in listOf("work", "normal") && !entry.isSnooze
-
-        if (userFacing || !canScheduleExact(am)) {
-            scheduleAlarmClock(context, am, entry)
-        } else {
+        if (canScheduleExact(am)) {
             try {
                 am.setExactAndAllowWhileIdle(
                     AlarmManager.RTC_WAKEUP, entry.triggerAt, pending(context, entry)
                 )
+                return
             } catch (e: SecurityException) {
-                // Permission was revoked after our check — never drop the alarm,
-                // fall back to the permission-free path instead.
                 Log.w(TAG, "Exact alarm rejected, falling back to setAlarmClock", e)
-                scheduleAlarmClock(context, am, entry)
             }
+        } else {
+            Log.w(TAG, "Exact alarm permission not granted, using setAlarmClock fallback")
         }
-    }
 
-    private fun scheduleAlarmClock(context: Context, am: AlarmManager, entry: AlarmEntry) {
         val info = AlarmManager.AlarmClockInfo(entry.triggerAt, pendingActivity(context, entry))
         try {
             am.setAlarmClock(info, pending(context, entry))
