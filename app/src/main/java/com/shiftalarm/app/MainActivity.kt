@@ -114,6 +114,17 @@ class MainActivity : ComponentActivity() {
             CountdownNotificationManager.checkAndShowCountdown(this@MainActivity)
         }
 
+        // Migration: make sure the stored lookahead is at least 7 days even
+        // if an older build saved a smaller value.
+        lifecycleScope.launch {
+            val data = Store(this@MainActivity).data.first()
+            if (data.settings.lookaheadDays < 7) {
+                Store(this@MainActivity).save(
+                    data.copy(settings = data.settings.copy(lookaheadDays = 7))
+                )
+            }
+        }
+
         setContent {
             var permissionsGranted by remember { mutableStateOf(false) }
 

@@ -76,11 +76,14 @@ fun DiagnosticsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> 
         }
     }
 
-    LaunchedEffect(Unit) {
-        val now = System.currentTimeMillis()
-        val from = now - 12L * 3600_000L
-        val to = now + maxOf(data.settings.lookaheadDays, 7).toLong() * 86400_000L
+    val timeFmt = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
+    val dayFmt = remember { SimpleDateFormat("M月d日 (E)", Locale.TRADITIONAL_CHINESE) }
+    val logTimeFmt = remember { SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()) }
+    val nowMs = System.currentTimeMillis()
+    val from = nowMs - 12L * 3600_000L
+    val to = nowMs + maxOf(data.settings.lookaheadDays, 7).toLong() * 86400_000L
 
+    LaunchedEffect(Unit) {
         if (data.icalEvents.isNotEmpty()) {
             previews = data.icalEvents.filter { it.begin >= from && it.begin <= to }
                 .sortedBy { it.begin }
@@ -100,9 +103,6 @@ fun DiagnosticsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> 
         loading = false
     }
 
-    val timeFmt = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
-    val dayFmt = remember { SimpleDateFormat("M月d日 (E)", Locale.TRADITIONAL_CHINESE) }
-    val logTimeFmt = remember { SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()) }
     val byDay = previews.groupBy { dayFmt.format(Date(it.begin)) }
 
     LazyColumn(
@@ -133,7 +133,15 @@ fun DiagnosticsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> 
                 Column(Modifier.padding(16.dp)) {
                     Text("iCal / 匯入", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     val source = when {
-                        data.icalEvents.isNotEmpty() -> "現時來源：已匯入嘅 .ics 檔案（" + data.icalEvents.size + " 個事件）"
+                        data.icalEvents.isNotEmpty() -> {
+                            val fmt = SimpleDateFormat("M月d日", Locale.TRADITIONAL_CHINESE)
+                            val min = data.icalEvents.minOfOrNull { it.begin }
+                            val max = data.icalEvents.maxOfOrNull { it.begin }
+                            val range = if (min != null && max != null) {
+                                "（涵蓋 " + fmt.format(Date(min)) + " → " + fmt.format(Date(max)) + "）"
+                            } else ""
+                            "現時來源：已匯入嘅 .ics 檔案（" + data.icalEvents.size + " 個事件）" + range
+                        }
                         data.settings.icalUrl.isNotBlank() -> "現時來源：iCal 網址"
                         else -> "現時來源：（未設定，去「設定」貼上 iCal 網址或匯入檔案）"
                     }
@@ -178,7 +186,14 @@ fun DiagnosticsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> 
         }
 
         item { Spacer(Modifier.height(6.dp)) }
-        item { Text("日程預覽（按日分組）", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+        item {
+            val fmt = SimpleDateFormat("M月d日", Locale.TRADITIONAL_CHINESE)
+            Text(
+                "日程預覽（按日分組）・抓取視窗：" + fmt.format(Date(from)) + " → " + fmt.format(Date(to)),
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
         if (loading) {
             item { Text("載入中…", fontSize = 13.sp) }
         }
