@@ -1,5 +1,6 @@
 package com.shiftalarm.app.core
 
+import android.app.AlarmManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -28,16 +29,19 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 /**
- * Singleton: shows a silent countdown notification for the next alarm within
- * 10 minutes. The update loop re-reads the stored schedule every tick, so a
- * deleted alarm's notification disappears immediately instead of counting
- * down to a fire time that no longer exists.
+ * Singleton: shows a silent countdown notification ONLY when the next alarm
+ * is within 3 minutes of firing (user preference — no other persistent
+ * notification exists). The update loop re-reads the stored schedule every
+ * tick, so a deleted alarm's notification disappears immediately instead of
+ * counting down to a fire time that no longer exists.
  */
 object CountdownNotificationManager {
 
     const val CHANNEL_ID = "upcoming_alarm"
     const val NOTIFICATION_ID = 99999
-    private const val COUNTDOWN_THRESHOLD_MINUTES = 10L
+    private const val COUNTDOWN_THRESHOLD_MINUTES = 3L
+    private const val PRE_ALARM_LEAD_MS = 3 * 60_000L
+    private const val PRE_ALARM_REQUEST_CODE = 270_000_000
 
     private val handler = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -83,6 +87,42 @@ object CountdownNotificationManager {
             startCountdownUpdates(c, nextAlarm)
         } else {
             cancelNotification()
+        }
+    }
+
+    /**
+     * Schedule a silent broadcast ~3 minutes before the next alarm so the
+     * countdown notification appears on time even when the app process is
+     * not running. Called after every sync, watchdog run and boot; chained
+     * by [PreAlarmReceiver] itself.
+     */
+    suspend fun ensurePreAlarm(context: Context) {
+        val c = contextOf(context)
+        val data = Store(c).data.first()
+        val now = System.currentTimeMillis()
+        val upcoming = data.scheduled.filter { it.triggerAt > now }.sortedBy { it.triggerAt }
+
+        val am = c.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val pi = PendingIntent.getBroadcast(
+            c, PRE_ALARM_REQUEST_CODE,
+            Intent(c, PreAlarmReceiver::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        // First alarm whose pre-alarm time is still in the future. If the
+        // next alarm is already inside the 3-minute window, show the
+        // notification now and let the receiver/watchdog chain the rest.
+        val target = upcoming.firstOrNull { it.triggerAt - PRE_ALARM_LEAD_MS > now }
+        if (target == null) {
+            if (upcoming.isEmpty()) am.cancel(pi) else checkAndShowCountdown(c)
+            return
+        }
+
+        val at = target.triggerAt - PRE_ALARM_LEAD_MS
+        runCatching {
+            am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
+        }.onFailure {
+            runCatching { am.set(AlarmManager.RTC_WAKEUP, at, pi) }
         }
     }
 

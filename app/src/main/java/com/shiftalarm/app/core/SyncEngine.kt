@@ -161,7 +161,9 @@ object SyncEngine {
         )
         store.save(newData)
 
-        // Trigger countdown notification check after sync
+        // Keep the 3-minute pre-alarm broadcast scheduled for the next
+        // alarm, and show the countdown notification if one is imminent.
+        runCatching { CountdownNotificationManager.ensurePreAlarm(context) }
         runCatching { CountdownNotificationManager.checkAndShowCountdown(context) }
 
         SyncResult(all.size, matchedEvents, offDays, eventsRead, errors, all.firstOrNull())

@@ -54,7 +54,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.shiftalarm.app.core.AlarmScheduler
-import com.shiftalarm.app.core.AlarmStandbyService
+import com.shiftalarm.app.core.AlarmWatchdogWorker
 import com.shiftalarm.app.core.CountdownNotificationManager
 import com.shiftalarm.app.core.PermissionGateScreen
 import com.shiftalarm.app.core.SyncEngine
@@ -97,12 +97,16 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         SyncEngine.schedulePeriodicSync(this)
 
-        // Keep the 24/7 standby service (persistent notification + alarm
-        // watchdog) running — it survives the app being swiped away.
+        // The old 24/7 standby foreground service is gone (user request:
+        // no persistent notification). Its job is now done by a
+        // notification-free WorkManager watchdog that re-registers all
+        // alarms every ~15 minutes.
+        AlarmWatchdogWorker.ensureScheduled(this)
+        AlarmWatchdogWorker.runNow(this)
+        // Clean up the leftover standby notification channel, if any.
         runCatching {
-            ContextCompat.startForegroundService(
-                this, Intent(this, AlarmStandbyService::class.java)
-            )
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+            nm.deleteNotificationChannel("alarm_standby")
         }
 
         // Check for upcoming alarms and show countdown notification if needed

@@ -55,7 +55,10 @@ import com.shiftalarm.app.data.AppData
 import com.shiftalarm.app.data.NormalAlarm
 import com.shiftalarm.app.data.ShiftConfig
 import com.shiftalarm.app.data.WorkProfile
+import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
 // ---------- 地點設定檔 ----------
 
@@ -400,6 +403,7 @@ fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
     // Legacy entries without a recorded time are still shown.
     val deletedList = data.dismissedAlarmMeta.entries.toList()
         .filter { (data.dismissedAlarmTimes[it.key] ?: Long.MAX_VALUE) > now }
+    val deletedDateFmt = remember { SimpleDateFormat("M月d日 HH:mm", Locale.TRADITIONAL_CHINESE) }
 
     LazyColumn(
         Modifier.fillMaxSize().padding(16.dp),
@@ -463,7 +467,11 @@ fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
                     Modifier.padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(entry.value, Modifier.weight(1f), fontSize = 14.sp)
+                    // Prefix the original fire date/time so same-label alarms
+                    // on different days can be told apart.
+                    val whenText = data.dismissedAlarmTimes[entry.key]
+                        ?.let { deletedDateFmt.format(Date(it)) + " " } ?: ""
+                    Text(whenText + entry.value, Modifier.weight(1f), fontSize = 14.sp)
                     TextButton(onClick = {
                         persistThenSync { d ->
                             d.copy(
