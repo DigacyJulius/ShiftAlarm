@@ -13,17 +13,20 @@ android {
         applicationId = "com.shiftalarm.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "1.4"
+        versionCode = 6
+        versionName = "1.5"
     }
 
     signingConfigs {
         create("release") {
-            // Only used for release builds. The actual keystore should be stored securely outside the repo.
+            // Keystore + passwords are provided via -P properties (CI uses
+            // GitHub Secrets). No defaults: a release build fails loudly if
+            // the signing material is missing instead of silently using a
+            // hardcoded password.
             storeFile = file("release.keystore")
-            storePassword = findProperty("RELEASE_STORE_PASSWORD") as String? ?: "shiftalarm123"
+            storePassword = findProperty("RELEASE_STORE_PASSWORD") as String?
             keyAlias = "shiftalarm"
-            keyPassword = findProperty("RELEASE_KEY_PASSWORD") as String? ?: "shiftalarm123"
+            keyPassword = findProperty("RELEASE_KEY_PASSWORD") as String?
         }
     }
 
