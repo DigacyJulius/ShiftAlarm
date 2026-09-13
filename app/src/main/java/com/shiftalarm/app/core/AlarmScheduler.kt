@@ -4,7 +4,6 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.util.Log
 import com.shiftalarm.app.data.AlarmEntry
 
@@ -38,51 +37,46 @@ object AlarmScheduler {
         )
     }
 
-    private fun canScheduleExact(am: AlarmManager): Boolean =
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.S || am.canScheduleExactAlarms()
-
     /**
-     * Schedule an alarm that fires even when the app is closed and the device
-     * is in Doze.
-     *
-     * All alarms use setExactAndAllowWhileIdle() — the standard alarm API,
-     * gated on the "Alarms & reminders" permission (enforced by the permission
-     * gate) and proven to work by the test alarm. If the permission is missing
-     * or revoked mid-flight, fall back to setAlarmClock(), which needs no
-     * special permission and still fires in Doze — but is only a fallback,
-     * because some OEM builds do not reliably honour several concurrent
-     * alarm-clock registrations from the same app. Either way, the alarm is
-     * never silently dropped.
+     * Schedule an alarm that fires even when the app is closed and the
+     * device is in Doze — same strategy as the original working code
+     * (commit 58f548a / a251560):
+     *   1. setExactAndAllowWhileIdle() — exact, Doze-proof (needs the
+     *      "Alarms & reminders" permission; USE_EXACT_ALARM is also declared
+     *      so it is normally auto-granted).
+     *   2. setAlarmClock() — still fires in Doze, needs the same permission
+     *      on Android 14+ (rejected with SecurityException there).
+     *   3. setAndAllowWhileIdle() — the ORIGINAL Doze fallback from commit
+     *      58f548a: no permission needed, not exact but still wakes the
+     *      device in Doze. An alarm is NEVER silently dropped.
      */
     fun schedule(context: Context, entry: AlarmEntry) {
         val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
-        if (canScheduleExact(am)) {
-            try {
-                am.setExactAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP, entry.triggerAt, pending(context, entry)
-                )
-                return
-            } catch (e: SecurityException) {
-                Log.w(TAG, "Exact alarm rejected, falling back to setAlarmClock", e)
-            }
-        } else {
-            Log.w(TAG, "Exact alarm permission not granted, using setAlarmClock fallback")
+        try {
+            am.setExactAndAllowWhileIdle(
+                AlarmManager.RTC_WAKEUP, entry.triggerAt, pending(context, entry)
+            )
+            return
+        } catch (e: SecurityException) {
+            Log.w(TAG, "Exact alarm rejected, trying setAlarmClock", e)
         }
 
-        val info = AlarmManager.AlarmClockInfo(entry.triggerAt, pendingActivity(context, entry))
         try {
+            val info = AlarmManager.AlarmClockInfo(entry.triggerAt, pendingActivity(context, entry))
             am.setAlarmClock(info, pending(context, entry))
+            return
         } catch (e: SecurityException) {
-            // On Android 14+ setAlarmClock() ALSO requires the exact-alarm
-            // permission, so without it both exact paths throw. Last resort:
-            // an inexact but Doze-capable alarm — better than silently
-            // dropping the alarm entirely.
-            runCatching {
-                am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, entry.triggerAt, pending(context, entry))
-            }.onFailure {
-                Log.e(TAG, "Failed to schedule alarm ${entry.id}", e)
-            }
+            Log.w(TAG, "setAlarmClock rejected, using inexact Doze fallback", e)
+        }
+
+        // Commit-58 fallback: inexact but Doze-capable, no permission needed.
+        runCatching {
+            am.setAndAllowWhileIdle(
+                AlarmManager.RTC_WAKEUP, entry.triggerAt, pending(context, entry)
+            )
+        }.onFailure {
+            Log.e(TAG, "Failed to schedule alarm ${entry.id}", it)
         }
     }
 
