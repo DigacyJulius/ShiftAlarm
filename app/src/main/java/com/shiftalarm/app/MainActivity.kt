@@ -1,7 +1,9 @@
 package com.shiftalarm.app
 
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -46,6 +48,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -66,9 +69,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.shiftalarm.app.core.AlarmScheduler
 import com.shiftalarm.app.core.AlarmWatchdogWorker
 import com.shiftalarm.app.core.CountdownNotificationManager
+import com.shiftalarm.app.core.ExactAlarmPermission
 import com.shiftalarm.app.core.L10n
 import com.shiftalarm.app.core.Monetization
 import com.shiftalarm.app.core.PermissionGateScreen
+import com.shiftalarm.app.core.PermissionNudgeEvent
 import com.shiftalarm.app.core.SyncEngine
 import com.shiftalarm.app.core.t
 import com.shiftalarm.app.data.AlarmEntry
@@ -155,6 +160,33 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             var permissionsGranted by remember { mutableStateOf(false) }
+
+            // Completes the permission-nudge chain pushed by the user: when
+            // AlarmScheduler fails to set an exact alarm because the
+            // "Alarms & reminders" permission is missing/revoked, it
+            // broadcasts PermissionNudgeEvent — show a dialog directing the
+            // user to the system toggle.
+            var showNudge by remember { mutableStateOf(false) }
+            val activity = this
+            DisposableEffect(Unit) {
+                val receiver = object : BroadcastReceiver() {
+                    override fun onReceive(c: Context?, i: Intent?) { showNudge = true }
+                }
+                androidx.core.content.ContextCompat.registerReceiver(
+                    activity,
+                    receiver,
+                    IntentFilter(PermissionNudgeEvent.ACTION),
+                    androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
+                )
+                onDispose { activity.unregisterReceiver(receiver) }
+            }
+
+            if (showNudge) {
+                ExactAlarmPermission.PermissionNudgeDialog(
+                    onDismiss = { showNudge = false },
+                    onOpenSettings = { ExactAlarmPermission.openSettings(activity) }
+                )
+            }
 
             if (!permissionsGranted) {
                 // Notification and special alarm permissions are all requested

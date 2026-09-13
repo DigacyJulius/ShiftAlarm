@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import com.shiftalarm.app.data.AlarmEntry
-import kotlin.Result.runCatching
 
 object AlarmScheduler {
 
