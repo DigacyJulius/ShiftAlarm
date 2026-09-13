@@ -74,7 +74,15 @@ object AlarmScheduler {
         try {
             am.setAlarmClock(info, pending(context, entry))
         } catch (e: SecurityException) {
-            Log.e(TAG, "Failed to schedule alarm ${entry.id}", e)
+            // On Android 14+ setAlarmClock() ALSO requires the exact-alarm
+            // permission, so without it both exact paths throw. Last resort:
+            // an inexact but Doze-capable alarm — better than silently
+            // dropping the alarm entirely.
+            runCatching {
+                am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, entry.triggerAt, pending(context, entry))
+            }.onFailure {
+                Log.e(TAG, "Failed to schedule alarm ${entry.id}", e)
+            }
         }
     }
 

@@ -881,20 +881,22 @@ private fun SettingsPermissionsBody() {
         )
 
         // --- Alarms & reminders (exact alarms) ---
-        // Uses the "Alarms & reminders" special permission: the app asks for
-        // it on startup and via the permission gate, and the system shows it
-        // in Settings > Apps > Special app access > Alarms & reminders.
+        // The app declares USE_EXACT_ALARM — the official permission for
+        // alarm clock apps: granted automatically at install and cannot be
+        // revoked, so it never needs to ask and never appears in the
+        // phone's "Alarms & reminders" special access list (Android hides
+        // auto-granted apps there). This row proves the live state.
         val exactOk = Build.VERSION.SDK_INT < 31 || am.canScheduleExactAlarms()
         val exactDetail = when {
             Build.VERSION.SDK_INT < 31 ->
                 t("Not required on this Android version.", "呢個 Android 版本唔需要此權限。")
             exactOk -> t(
-                "Granted via the \"Alarms & reminders\" special permission — alarms ring exactly on time.",
-                "已透過「鬧鐘和提醒」特殊權限授予——鬧鐘會準時響。"
+                "Granted — built in for alarm clock apps, always on. (That is also why the app does not appear in the phone's Alarms & reminders list: the system hides apps that already have it.)",
+                "已授予——鬧鐘類 app 專用權限，永久生效。（所以手機嘅「鬧鐘和提醒」清單入面搵唔到呢個 app：系統會隱藏已有權限嘅 app，屬正常。）"
             )
             else -> t(
-                "Required so alarms ring exactly. The app asks for it on startup; you can also tap the button below.",
-                "必須開啟，鬧鐘先可以準時響。App 啟動時會自動要求，亦可以撳下面按鈕。"
+                "Not granted — the app will ask for it on startup.",
+                "未授予——app 啟動時會要求開啟。"
             )
         }
         SettingsPermissionRow(

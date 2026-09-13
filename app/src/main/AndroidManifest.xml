@@ -4,6 +4,15 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- USE_EXACT_ALARM: the official permission for ALARM CLOCK apps.
+         Normal permission, granted automatically at install, cannot be
+         revoked — the app never needs to ask. This is what the original
+         working versions had; it was removed on Sep 10 which is when alarms
+         stopped ringing. On this user's phone (Android 14+, battery-exempt)
+         the system HIDES the app from the "Alarms & reminders" special
+         access list, so the SCHEDULE_EXACT_ALARM ask-flow is unusable there
+         and USE_EXACT_ALARM is the only reliable path. -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <!-- SYSTEM_ALERT_WINDOW ("display over other apps") exempts the app from
          background-activity-launch restrictions, letting the ringing screen pop
          up immediately even when another app is in the foreground. -->

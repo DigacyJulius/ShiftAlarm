@@ -116,19 +116,22 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         SyncEngine.schedulePeriodicSync(this)
 
-        // === 鬧鐘和提醒權限：無條件喺開頭彈出系統畫面（no matter what）===
-        // Every cold start opens the system "Alarms & reminders" screen for
-        // this app directly, regardless of what the system reports. The user
-        // can see the toggle with their own eyes and turn it on. One back
-        // press dismisses it when it is already on.
+        // === 精確鬧鐘權限 ===
+        // USE_EXACT_ALARM (declared in the manifest) is granted automatically
+        // at install, so normally nothing to ask. Only if it is somehow NOT
+        // granted (e.g. Android 12 with the special permission revoked) open
+        // the system screen so the user can turn it on.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            runCatching {
-                startActivity(
-                    Intent(
-                        android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
-                        Uri.parse("package:$packageName")
+            val am = getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+            if (!am.canScheduleExactAlarms()) {
+                runCatching {
+                    startActivity(
+                        Intent(
+                            android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                            Uri.parse("package:$packageName")
+                        )
                     )
-                )
+                }
             }
         }
 
