@@ -2,10 +2,14 @@
 
 package com.shiftalarm.app.ui
 
+import android.Manifest
 import android.app.AlarmManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -27,6 +31,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,6 +44,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,6 +56,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import com.shiftalarm.app.calendar.CalendarReader
+import com.shiftalarm.app.calendar.CalInfo
 import com.shiftalarm.app.core.L10n
 import com.shiftalarm.app.core.Monetization
 import com.shiftalarm.app.core.RuleEngine
@@ -62,6 +71,8 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 // ---------- 地點設定檔 ----------
 
@@ -446,8 +457,16 @@ fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
     // bottom nav tab.
     var showDiagnostics by remember { mutableStateOf(false) }
     var showTutorial by remember { mutableStateOf(false) }
+    var showDeviceCals by remember { mutableStateOf(false) }
     if (showTutorial) {
         TutorialScreen(onFinished = { showTutorial = false })
+        return
+    }
+    if (showDeviceCals) {
+        Column(Modifier.fillMaxSize()) {
+            TextButton(onClick = { showDeviceCals = false }) { Text(t("← Back to settings", "← 返回設定")) }
+            DeviceCalendarsScreen(data, persistThenSync)
+        }
         return
     }
     if (showDiagnostics) {
@@ -522,8 +541,8 @@ fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     t(
-                        "Paste your Google Calendar secret iCal address (Settings → Import & export → Secret address). The app fetches it every hour. An .ics file imported in Diagnostics takes priority.",
-                        "貼上 Google Calendar 的「私人 iCal 網址」（齒輪設定 → 匯入和匯出／整合日曆 → 私人網址）。App 每小時自動抓取一次。若已在「診斷」入面匯入過 .ics 檔案，檔案優先。"
+                        "Paste your Google Calendar secret iCal address (Settings → Import & export → Secret address). The app fetches it every hour. Priority: imported .ics file → device calendars → iCal URL. Shifts entered on the Calendar page always count.",
+                        "貼上 Google Calendar 的「私人 iCal 網址」（齒輪設定 → 匯入和匯出／整合日曆 → 私人網址）。App 每小時自動抓取一次。優先次序：匯入嘅 .ics 檔案 → 裝置日曆 → iCal 網址。「日曆」分頁手動填嘅更一定會計。"
                     ),
                     fontSize = 12.sp
                 )
@@ -536,6 +555,31 @@ fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
                 Button(onClick = {
                     persistThenSync { d -> d.copy(settings = d.settings.copy(icalUrl = icalUrl.trim())) }
                 }) { Text(t("Save & sync now", "儲存並立即同步")) }
+            }
+        }
+
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    t("Device calendars (roster source)", "裝置日曆（更期來源）"),
+                    fontSize = 16.sp, fontWeight = FontWeight.Bold
+                )
+                Text(
+                    t(
+                        "Read shifts straight from the calendar apps on this phone (Google Calendar, Samsung Calendar, …). Pick which calendars to use. Used only when no .ics file is imported.",
+                        "直接讀取手機上日曆 app（Google 日曆、Samsung 日曆等）嘅更期，揀選用邊個日曆。只喺冇匯入 .ics 檔案時先會用。"
+                    ),
+                    fontSize = 12.sp
+                )
+                OutlinedButton(
+                    onClick = { showDeviceCals = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        if (s.deviceCalendarIds.isEmpty()) t("Select calendars", "揀選日曆")
+                        else t("Select calendars (", "揀選日曆（已選 ") + s.deviceCalendarIds.size + t(" selected)", " 個）")
+                    )
+                }
             }
         }
 
@@ -817,4 +861,115 @@ fun IntField(label: String, value: Int, onChange: (Int) -> Unit) {
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         modifier = Modifier.fillMaxWidth()
     )
+}
+
+// ---------- 裝置日曆選擇 ----------
+
+/** Pick which device calendars (CalendarProvider) hold the user's roster. */
+@Composable
+fun DeviceCalendarsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var hasPerm by remember {
+        mutableStateOf(CalendarReader.hasPermission(context))
+    }
+    var cals by remember { mutableStateOf<List<CalInfo>>(emptyList()) }
+    var selected by remember(data.settings.deviceCalendarIds) {
+        mutableStateOf(data.settings.deviceCalendarIds.toMutableSet())
+    }
+
+    val permLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> hasPerm = granted }
+
+    LaunchedEffect(hasPerm) {
+        if (hasPerm) {
+            cals = withContext(Dispatchers.IO) { CalendarReader.listCalendars(context) }
+        }
+    }
+
+    Column(Modifier.fillMaxSize().padding(16.dp)) {
+        Text(
+            t("Device calendars", "裝置日曆"),
+            fontSize = 22.sp, fontWeight = FontWeight.Bold
+        )
+        Spacer(Modifier.height(8.dp))
+        if (!hasPerm) {
+            Text(
+                t(
+                    "To read shifts from the calendar apps on this phone, allow calendar access first. The app only reads calendars you pick below.",
+                    "要讀取手機日曆 app 嘅更期，請先允許日曆存取權限。App 只會讀取下面你揀嘅日曆。"
+                ),
+                fontSize = 13.sp
+            )
+            Spacer(Modifier.height(12.dp))
+            Button(onClick = { permLauncher.launch(Manifest.permission.READ_CALENDAR) }) {
+                Text(t("Allow calendar access", "允許日曆存取"))
+            }
+        } else {
+            Text(
+                t(
+                    "Tick the calendars that hold your roster. Event titles still need to match your work profile keywords (e.g. \"cmc a\").",
+                    "剔選載有你更期嘅日曆。事件標題仍要符合地點設定檔嘅關鍵字（例：cmc a）。"
+                ),
+                fontSize = 13.sp
+            )
+            Spacer(Modifier.height(8.dp))
+            LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                items(cals) { cal ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable {
+                            selected = if (cal.id in selected) (selected - cal.id).toMutableSet()
+                            else (selected + cal.id).toMutableSet()
+                        },
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = cal.id in selected,
+                            onCheckedChange = {
+                                selected = if (it) (selected + cal.id).toMutableSet()
+                                else (selected - cal.id).toMutableSet()
+                            }
+                        )
+                        Column {
+                            Text(cal.name.ifBlank { "(" + cal.id + ")" }, fontSize = 15.sp)
+                            Text(
+                                cal.account, fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+                if (cals.isEmpty()) {
+                    item {
+                        Text(
+                            t("No calendars found on this device.", "呢部裝置搵唔到任何日曆。"),
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = {
+                    persistThenSync { d ->
+                        d.copy(settings = d.settings.copy(deviceCalendarIds = selected.toSet()))
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text(t("Save & sync now", "儲存並立即同步")) }
+            if (selected.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                OutlinedButton(
+                    onClick = {
+                        selected = mutableSetOf()
+                        persistThenSync { d ->
+                            d.copy(settings = d.settings.copy(deviceCalendarIds = emptySet()))
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(t("Stop using device calendars", "停用裝置日曆")) }
+            }
+        }
+    }
 }

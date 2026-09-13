@@ -34,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import com.shiftalarm.app.calendar.CalendarReader
 import com.shiftalarm.app.calendar.EventPreview
 import com.shiftalarm.app.calendar.IcalSource
 import com.shiftalarm.app.core.L10n
@@ -96,6 +97,16 @@ fun DiagnosticsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> 
                 .sortedBy { it.begin }
                 .take(200)
                 .map { EventPreview(it.title, it.begin, it.calendarId) }
+        } else if (data.settings.deviceCalendarIds.isNotEmpty()) {
+            try {
+                val evs = withContext(Dispatchers.IO) {
+                    CalendarReader.queryEvents(context, from, to, data.settings.deviceCalendarIds)
+                }.sortedBy { it.begin }
+                icalStatus = t("✓ Device calendars read OK: ", "✓ 裝置日曆讀取成功：窗口內 ") + evs.size + t(" events in window", " 個事件")
+                previews = evs.take(200).map { EventPreview(it.title, it.begin, it.calendarId) }
+            } catch (e: Exception) {
+                icalStatus = t("✗ Device calendar read failed (permission?) — ", "✗ 裝置日曆讀取失敗（權限？）——") + (e.message ?: e.toString())
+            }
         } else if (data.settings.icalUrl.isNotBlank()) {
             try {
                 val evs = withContext(Dispatchers.IO) {
@@ -149,8 +160,9 @@ fun DiagnosticsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> 
                             } else ""
                             t("Current source: imported .ics file (", "現時來源：已匯入嘅 .ics 檔案（") + data.icalEvents.size + t(" events)", " 個事件）") + range
                         }
+                        data.settings.deviceCalendarIds.isNotEmpty() -> t("Current source: device calendars (", "現時來源：裝置日曆（已選 ") + data.settings.deviceCalendarIds.size + t(" selected)", " 個）")
                         data.settings.icalUrl.isNotBlank() -> t("Current source: iCal URL", "現時來源：iCal 網址")
-                        else -> t("Current source: (none — paste an iCal URL in Settings or import a file here)", "現時來源：（未設定，去「設定」貼上 iCal 網址或匯入檔案）")
+                        else -> t("Current source: (none — use a device calendar, an iCal URL, an .ics import, or the Calendar page)", "現時來源：（未設定——可用裝置日曆、iCal 網址、匯入檔案，或「日曆」分頁手動填更）")
                     }
                     Text(source, fontSize = 13.sp)
                     Spacer(Modifier.height(8.dp))

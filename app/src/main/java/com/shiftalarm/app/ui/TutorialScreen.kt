@@ -62,12 +62,12 @@ private val TUTORIAL_PAGES = listOf(
     TutorialPage(
         Icons.Filled.DateRange, "Step 1 — Connect your roster", "第一步 — 連接更期日曆",
         listOf(
-            "Open Settings and paste your Google Calendar private iCal address (Google Calendar → Settings → Import & export → Secret address in iCal format).",
-            "The app fetches your roster every hour automatically. If you import an .ics file in Diagnostics, the file takes priority."
+            "Four ways to feed your roster: ① paste a Google Calendar private iCal address (Settings → Import & export → Secret address), ② pick device calendars in Settings, ③ import an .ics file in Diagnostics, or ④ tap days on the Calendar page and pick your shift by hand — no calendar app needed.",
+            "The app refreshes every hour automatically. Priority: imported .ics → device calendars → iCal URL. Calendar-page entries always count."
         ),
         listOf(
-            "開啟「設定」，貼上 Google Calendar 嘅私人 iCal 網址（Google 日曆 → 設定 → 匯入和匯出 → iCal 私人網址）。",
-            "App 每小時自動抓取更期一次。如果喺「診斷」匯入過 .ics 檔案，檔案優先。"
+            "更期來源有四種：① 喺設定貼上 Google 日曆嘅私人 iCal 網址（設定 → 匯入和匯出 → iCal 私人網址）；② 喺設定揀選裝置日曆；③ 喺「診斷」匯入 .ics 檔案；④ 直接喺「日曆」分頁撳日期手動揀更份，唔使任何日曆 app。",
+            "App 每小時自動更新一次。優先次序：匯入 .ics → 裝置日曆 → iCal 網址；「日曆」分頁手動填嘅更一定會計。"
         )
     ),
     TutorialPage(

@@ -5,6 +5,7 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.shiftalarm.app.calendar.CalEvent
+import com.shiftalarm.app.calendar.CalendarReader
 import com.shiftalarm.app.calendar.IcalSource
 import com.shiftalarm.app.data.AlarmEntry
 import com.shiftalarm.app.data.Store
@@ -66,6 +67,20 @@ object SyncEngine {
             val events: List<CalEvent> = when {
                 data.icalEvents.isNotEmpty() ->
                     data.icalEvents.filter { it.begin >= from && it.begin <= to }
+                data.settings.deviceCalendarIds.isNotEmpty() -> {
+                    // Device calendars (CalendarProvider). Needs READ_CALENDAR.
+                    try {
+                        CalendarReader.queryEvents(context, from, to, data.settings.deviceCalendarIds)
+                    } catch (e: SecurityException) {
+                        errors += t("Device calendar permission missing — kept existing alarms", "缺少日曆讀取權限——保留原有鬧鐘")
+                        readOk = false
+                        emptyList()
+                    } catch (e: Exception) {
+                        errors += t("Device calendar read failed: ", "讀取裝置日曆失敗：") + (e.message ?: e.toString())
+                        readOk = false
+                        emptyList()
+                    }
+                }
                 data.settings.icalUrl.isNotBlank() -> {
                     try {
                         IcalSource.fetchEventsFromUrl(data.settings.icalUrl, from, to)
@@ -86,6 +101,32 @@ object SyncEngine {
                     continue
                 }
                 val alarms = RuleEngine.buildWorkAlarms(ev, profile, data.settings)
+                    .filter { it.triggerAt > now && it.id !in activeDeletedIds }
+                if (alarms.isNotEmpty()) matchedEvents++
+                workEntries += alarms
+            }
+
+            // Manual shifts entered on the in-app Calendar page. These are
+            // local data, so they are always processed regardless of which
+            // automatic source (or none) is configured. Alarm ids derive
+            // from (date + profile) so they stay stable across syncs, letting
+            // delete/restore and group dismissal work as usual.
+            for (me in data.manualShifts) {
+                val profile = data.profiles.firstOrNull { it.id == me.profileId } ?: continue
+                val day = runCatching { java.time.LocalDate.parse(me.date) }.getOrNull() ?: continue
+                val begin = day.atTime(12, 0).atZone(java.time.ZoneId.systemDefault())
+                    .toInstant().toEpochMilli()
+                if (begin < from || begin > to) continue
+                val idSeed = (me.date + "#" + me.profileId).hashCode().toLong().let {
+                    if (it < 0) -it else it
+                } % 10_000_000L
+                if (dismissed.containsKey(100_000_000L + idSeed * 10L)) continue
+                if (me.off) {
+                    offDays++
+                    continue
+                }
+                val shift = profile.shifts.firstOrNull { it.name == me.shiftName } ?: continue
+                val alarms = RuleEngine.buildAlarmsForShift(shift, profile, begin, idSeed)
                     .filter { it.triggerAt > now && it.id !in activeDeletedIds }
                 if (alarms.isNotEmpty()) matchedEvents++
                 workEntries += alarms

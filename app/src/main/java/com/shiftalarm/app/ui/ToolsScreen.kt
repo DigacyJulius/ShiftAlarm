@@ -307,13 +307,17 @@ fun cityLabel(c: WorldCity): String = if (L10n.lang == "zh") c.zh else c.en
 fun ToolsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Unit) {
     val scope = rememberCoroutineScope()
     var tab by remember { mutableIntStateOf(0) }
-    // Infinite pager for wrap-around swiping between the three tools.
-    val anchor = 3000 // divisible by 3
-    val pagerState = rememberPagerState(initialPage = anchor) { anchor * 2 }
+    // Timer wheel selection lives here (not inside TimerView) so it survives
+    // swiping between tool tabs.
+    var timerSel by remember { mutableStateOf(Triple(0, 5, 0)) }
+    // Finite 3-page pager. Swiping past the first/last tool no longer
+    // wraps — instead the unconsumed gesture flows to the MAIN pager, so
+    // the user can swipe straight from the Tools edge tabs to the
+    // neighbouring app pages (previously the infinite inner pager
+    // swallowed every horizontal swipe).
+    val pagerState = rememberPagerState(initialPage = 0) { 3 }
     LaunchedEffect(pagerState) {
-        snapshotFlow { pagerState.currentPage }.collect { p ->
-            tab = ((p % 3) + 3) % 3
-        }
+        snapshotFlow { pagerState.currentPage }.collect { p -> tab = p }
     }
     Column(Modifier.fillMaxSize()) {
         TabRow(selectedTabIndex = tab) {
@@ -322,9 +326,7 @@ fun ToolsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Unit) 
                     Tab(
                         selected = tab == i,
                         onClick = {
-                            var d = (i - tab + 3) % 3
-                            if (d == 2) d = -1 // always the shortest hop
-                            scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + d) }
+                            scope.launch { pagerState.animateScrollToPage(i) }
                         },
                         text = { Text(label) }
                     )
@@ -334,7 +336,11 @@ fun ToolsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Unit) 
             when (((page % 3) + 3) % 3) {
                 0 -> WorldClockView(data, persistThenSync)
                 1 -> StopwatchView()
-                else -> TimerView(data, persistThenSync)
+                2 -> TimerView(
+                    data, persistThenSync,
+                    timerSel.first, timerSel.second, timerSel.third,
+                    onSel = { h, m, s -> timerSel = Triple(h, m, s) }
+                )
             }
         }
     }
@@ -351,7 +357,8 @@ fun WorldClockView(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
             delay(1000)
         }
     }
-    val zones = if (data.worldClocks.isEmpty()) listOf("Asia/Hong_Kong") else data.worldClocks
+    // No default city: the list starts empty until the user adds one.
+    val zones = data.worldClocks
     var showPicker by remember { mutableStateOf(false) }
 
     LazyColumn(
@@ -372,6 +379,18 @@ fun WorldClockView(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
                 ),
                 fontSize = 13.sp
             )
+        }
+        if (zones.isEmpty()) {
+            item {
+                Text(
+                    t(
+                        "No cities yet — tap “＋ Add city” below to add one.",
+                        "仲未加城市——撳下面「＋ 加入城市」加一個。"
+                    ),
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
         items(zones, key = { it }) { zone ->
             val zoneId = remember(zone) { runCatching { ZoneId.of(zone) }.getOrNull() }
@@ -562,11 +581,16 @@ private fun formatStopwatch(elapsed: Long): String = String.format(
 // ---------- 計時 ----------
 
 @Composable
-fun TimerView(data: AppData, persistThenSync: ((AppData) -> AppData) -> Unit) {
+fun TimerView(
+    data: AppData,
+    persistThenSync: ((AppData) -> AppData) -> Unit,
+    selH: Int, selM: Int, selS: Int,
+    onSel: (Int, Int, Int) -> Unit
+) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
-    var h by remember { mutableIntStateOf(0) }
-    var m by remember { mutableIntStateOf(5) }
-    var s by remember { mutableIntStateOf(0) }
+    val h = selH
+    val m = selM
+    val s = selS
     var now by remember { mutableStateOf(System.currentTimeMillis()) }
     val active = data.timerEndAt > now
 
@@ -610,10 +634,28 @@ fun TimerView(data: AppData, persistThenSync: ((AppData) -> AppData) -> Unit) {
                 modifier = Modifier.padding(top = 12.dp)
             )
         } else {
-            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                NumberWheel((0..23).toList(), h, onSelected = { h = it }) { t("hr", "時") }
-                NumberWheel((0..59).toList(), m, onSelected = { m = it }) { t("min", "分") }
-                NumberWheel((0..59).toList(), s, onSelected = { s = it }) { t("sec", "秒") }
+            // Live preview of the selected duration so the h/m/s wheels are
+            // unmistakable.
+            Text(
+                String.format(Locale.US, "%02d:%02d:%02d", h, m, s),
+                fontSize = 40.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace
+            )
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth()) {
+                NumberWheel(
+                    (0..23).toList(), h, onSelected = { onSel(it, m, s) },
+                    modifier = Modifier.weight(1f)
+                ) { t("Hours", "時") }
+                NumberWheel(
+                    (0..59).toList(), m, onSelected = { onSel(h, it, s) },
+                    modifier = Modifier.weight(1f)
+                ) { t("Minutes", "分") }
+                NumberWheel(
+                    (0..59).toList(), s, onSelected = { onSel(h, m, it) },
+                    modifier = Modifier.weight(1f)
+                ) { t("Seconds", "秒") }
             }
             Spacer(Modifier.height(24.dp))
             Button(
@@ -649,6 +691,7 @@ private fun NumberWheel(
     values: List<Int>,
     initial: Int,
     onSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier,
     label: @Composable () -> Unit
 ) {
     val itemHeight = 44.dp
@@ -663,7 +706,7 @@ private fun NumberWheel(
             if (!scrolling) onSelected(values[centered])
         }
     }
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         label()
         LazyColumn(
             state = state,

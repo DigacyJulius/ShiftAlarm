@@ -23,6 +23,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Place
@@ -69,12 +70,14 @@ import com.shiftalarm.app.core.t
 import com.shiftalarm.app.data.AlarmEntry
 import com.shiftalarm.app.data.AppData
 import com.shiftalarm.app.data.Store
+import com.shiftalarm.app.ui.CalendarScreen
 import com.shiftalarm.app.ui.DiagnosticsScreen
 import com.shiftalarm.app.ui.NormalAlarmsScreen
 import com.shiftalarm.app.ui.ProfilesScreen
 import com.shiftalarm.app.ui.SettingsScreen
 import com.shiftalarm.app.ui.ToolsScreen
 import com.shiftalarm.app.ui.TutorialScreen
+import com.shiftalarm.app.ui.zoneLabel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -167,19 +170,23 @@ fun AppRoot() {
     var syncMessage by remember { mutableStateOf<String?>(null) }
     var showTutorial by remember { mutableStateOf(false) }
 
-    // Sync the app language from stored settings, and show the tutorial on
-    // very first launch.
+    // Sync the app language from stored settings.
     LaunchedEffect(data.settings.language) {
         L10n.lang = data.settings.language.ifEmpty { "en" }
     }
-    LaunchedEffect(data.settings.tutorialDone) {
-        if (!data.settings.tutorialDone) showTutorial = true
+    // Show the tutorial on first launch ONLY. Wait for the stored data to
+    // load first — the reactive `data` starts as the default AppData()
+    // (tutorialDone=false) before DataStore finishes reading, which used to
+    // flash the tutorial on EVERY launch even after completion.
+    LaunchedEffect(Unit) {
+        val stored = store.data.first()
+        if (!stored.settings.tutorialDone) showTutorial = true
     }
 
     // Swipeable main pages with wrap-around: swiping past the last page
     // lands on the first one and vice versa (infinite pager trick).
-    val pageCount = 5
-    val anchor = 5000 // divisible by pageCount
+    val pageCount = 6
+    val anchor = 4998 // divisible by pageCount, so the initial page maps to tab 0
     val pagerState = rememberPagerState(initialPage = anchor) { anchor * 2 }
     LaunchedEffect(pagerState) {
         snapshotFlow { pagerState.currentPage }.collect { p ->
@@ -206,10 +213,11 @@ fun AppRoot() {
                         "Synced, but no alarms scheduled: no work profiles yet. Go to Roster → add one (e.g. name CMC, keyword cmc), save, then sync again.",
                         "同步完成，但排唔到任何鬧鐘：仲未有地點設定檔。去「更期」→ 新增（例：名稱 CMC、地點關鍵字 cmc），儲存後再撳同步。"
                     )
-                data.settings.icalUrl.isBlank() && data.icalEvents.isEmpty() ->
+                data.settings.icalUrl.isBlank() && data.icalEvents.isEmpty() &&
+                    data.settings.deviceCalendarIds.isEmpty() && data.manualShifts.isEmpty() ->
                     t(
-                        "Synced, but no iCal URL or imported file set. Paste an iCal URL in Settings, or import an .ics file in Diagnostics.",
-                        "同步完成，但未設定 iCal 網址或匯入檔案。去「設定」貼上 iCal 網址，或去「診斷」匯入 .ics 檔案。"
+                        "Synced, but no roster source set. Paste an iCal URL, pick device calendars, import an .ics file (Diagnostics), or enter shifts by hand on the Calendar page.",
+                        "同步完成，但未設定更期來源。可以貼 iCal 網址、揀裝置日曆、喺「診斷」匯入 .ics 檔案，或直接喺「日曆」分頁手動填更。"
                     )
                 r.eventsRead == 0 ->
                     t(
@@ -295,6 +303,7 @@ fun AppRoot() {
                     val labels = listOf(
                         t("Home", "首頁") to Icons.Filled.Home,
                         t("Roster", "更期") to Icons.Filled.Place,
+                        t("Calendar", "日曆") to Icons.Filled.DateRange,
                         t("Alarms", "鬧鐘") to Icons.Filled.Alarm,
                         t("Tools", "工具") to Icons.Filled.Schedule,
                         t("Settings", "設定") to Icons.Filled.Settings
@@ -337,8 +346,9 @@ fun AppRoot() {
                             onDelete = { e -> deleteAlarm(e) }
                         )
                         1 -> ProfilesScreen(data, persistThenSync = ::persistThenSync)
-                        2 -> NormalAlarmsScreen(data, persistThenSync = ::persistThenSync)
-                        3 -> ToolsScreen(data, persistThenSync = ::persistThenSync)
+                        2 -> CalendarScreen(data, persistThenSync = ::persistThenSync)
+                        3 -> NormalAlarmsScreen(data, persistThenSync = ::persistThenSync)
+                        4 -> ToolsScreen(data, persistThenSync = ::persistThenSync)
                         else -> SettingsScreen(data, persistThenSync = ::persistThenSync)
                     }
                 }
@@ -455,6 +465,20 @@ fun HomeScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(onClick = onSync) { Text(t("Sync now", "立即同步")) }
                 OutlinedButton(onClick = onTest) { Text(t("Test alarm (15s)", "測試鬧鐘（15秒後）")) }
+            }
+        }
+        // Region-alarm indicator: makes it obvious which region normal
+        // alarms currently follow after switching regions in Settings.
+        if (data.settings.alarmTimezone.isNotBlank()) {
+            item {
+                Card(Modifier.fillMaxWidth()) {
+                    Text(
+                        t("Region alarms: ", "地區鬧鐘：") + zoneLabel(data.settings.alarmTimezone) +
+                            t(" — normal alarms ring at this region's local time", "（一般鬧鐘跟呢個地區嘅當地時間響）"),
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(14.dp)
+                    )
+                }
             }
         }
         if (syncMessage != null) {

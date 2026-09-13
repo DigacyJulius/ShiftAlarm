@@ -57,22 +57,36 @@ object RuleEngine {
         settings: AppSettings
     ): List<AlarmEntry> {
         val cfg = pickShift(event, profile, settings) ?: return emptyList()
+        return buildAlarmsForShift(cfg, profile, event.begin, event.instanceId % 10_000_000L)
+            .map { it.copy(groupId = event.instanceId) }
+    }
+
+    /** Build alarms for an explicitly chosen shift on a given day.
+     *  Used by the in-app Calendar page where the user picks the profile
+     *  and shift directly, so no keyword/hour matching is involved.
+     *  [idSeed] keeps alarm ids stable across syncs (for delete/restore). */
+    fun buildAlarmsForShift(
+        cfg: ShiftConfig,
+        profile: WorkProfile,
+        dayMillis: Long,
+        idSeed: Long
+    ): List<AlarmEntry> {
         val (h, m) = parseTime(cfg.wakeTime)
         val base = Calendar.getInstance().apply {
-            timeInMillis = event.begin
+            timeInMillis = dayMillis
             set(Calendar.HOUR_OF_DAY, h)
             set(Calendar.MINUTE, m)
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
         }
-        val baseId = 100_000_000L + (event.instanceId % 10_000_000L) * 10L
+        val baseId = 100_000_000L + (idSeed % 10_000_000L) * 10L
         val result = mutableListOf<AlarmEntry>()
         for (i in 0..cfg.alarmCount.coerceIn(0, 9)) {
             val t = base.timeInMillis + TimeUnit.MINUTES.toMillis(cfg.intervalMin.toLong() * i)
             val suffix = if (i > 0) "\uff08\u5f8c\u5099 $i\uff09" else ""
             result += AlarmEntry(
                 id = baseId + i,
-                groupId = event.instanceId,
+                groupId = baseId,
                 triggerAt = t,
                 label = profile.name + " \u00b7 " + cfg.name + suffix,
                 kind = "work"

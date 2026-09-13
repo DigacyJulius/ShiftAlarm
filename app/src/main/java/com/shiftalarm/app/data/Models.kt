@@ -61,7 +61,21 @@ data class AppSettings(
     val language: String = "en",
     val tutorialDone: Boolean = false,
     val adsRemoved: Boolean = false,
-    val adUnitId: String = ""
+    val adUnitId: String = "",
+    // Device calendars (CalendarProvider ids) selected as the roster source.
+    // Empty = not used. Only takes effect when no .ics file is imported.
+    val deviceCalendarIds: Set<Long> = emptySet()
+)
+
+/** One manually-entered shift on the in-app Calendar page.
+ *  [date] is a local date ("2026-09-14"); [shiftName] must match a
+ *  ShiftConfig.name in the profile, or empty when [off] is true. */
+@Serializable
+data class ShiftEntry(
+    val date: String,
+    val profileId: Long,
+    val shiftName: String,
+    val off: Boolean = false
 )
 
 @Serializable
@@ -95,5 +109,7 @@ data class AppData(
     // World clock: user-selected timezone ids (IANA, e.g. "Asia/Tokyo").
     val worldClocks: List<String> = emptyList(),
     // Active timer: absolute end time in millis (0 = no timer running).
-    val timerEndAt: Long = 0
+    val timerEndAt: Long = 0,
+    // Manually-entered shifts from the in-app Calendar page.
+    val manualShifts: List<ShiftEntry> = emptyList()
 )
