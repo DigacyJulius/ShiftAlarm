@@ -195,8 +195,8 @@ fun CalendarScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
                 if (data.profiles.isEmpty()) {
                     Text(
                         t(
-                            "No work profiles yet. Create one on the Roster page first (e.g. name CMC), then pick shifts here.",
-                            "仲未有地點設定檔。先去「更期」新增（例：名稱 CMC），再返嚟揀更份。"
+                            "No work profiles yet. Create one on the Profile page first (e.g. name CMC), then pick shifts here.",
+                            "仲未有地點設定檔。先去「設定檔」新增（例：名稱 CMC），再返嚟揀更份。"
                         )
                     )
                 } else {

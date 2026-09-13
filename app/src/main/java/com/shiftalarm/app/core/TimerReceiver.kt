@@ -69,7 +69,7 @@ class TimerReceiver : BroadcastReceiver() {
         )
         val sound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+            .setSmallIcon(com.shiftalarm.app.R.drawable.ic_notification)
             .setContentTitle(t("Timer done", "計時結束"))
             .setContentText(t("Ding! Time's up.", "叮！時間到喇。"))
             .setPriority(NotificationCompat.PRIORITY_HIGH)

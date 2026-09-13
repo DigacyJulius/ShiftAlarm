@@ -6,6 +6,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.lifecycle.lifecycleScope
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,7 +23,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
@@ -75,8 +76,11 @@ import com.shiftalarm.app.ui.DiagnosticsScreen
 import com.shiftalarm.app.ui.NormalAlarmsScreen
 import com.shiftalarm.app.ui.ProfilesScreen
 import com.shiftalarm.app.ui.SettingsScreen
-import com.shiftalarm.app.ui.ToolsScreen
+import com.shiftalarm.app.ui.StopwatchView
+import com.shiftalarm.app.ui.TimerView
+import com.shiftalarm.app.ui.ToolTabs
 import com.shiftalarm.app.ui.TutorialScreen
+import com.shiftalarm.app.ui.WorldClockView
 import com.shiftalarm.app.ui.zoneLabel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -183,14 +187,26 @@ fun AppRoot() {
         if (!stored.settings.tutorialDone) showTutorial = true
     }
 
-    // Swipeable main pages with wrap-around: swiping past the last page
-    // lands on the first one and vice versa (infinite pager trick).
-    val pageCount = 6
-    val anchor = 4998 // divisible by pageCount, so the initial page maps to tab 0
+    // FLAT swipeable pager with wrap-around. Every tool sub-page is a
+    // TOP-LEVEL page, so swiping between tools is indistinguishable from
+    // swiping between main tabs (no nested pager = no gesture threshold).
+    //   page 0 = Home | 1-4 = Tools (Alarms, Clock, Stopwatch, Timer)
+    //   5 = Profile | 6 = Calendar | 7 = Settings
+    val pageCount = 8
+    val anchor = 4000 // divisible by pageCount
     val pagerState = rememberPagerState(initialPage = anchor) { anchor * 2 }
+    var lastToolPage by remember { mutableIntStateOf(1) }
+    // Timer wheel selection hoisted here so it survives page switches.
+    var timerSel by remember { mutableStateOf(Triple(0, 5, 0)) }
     LaunchedEffect(pagerState) {
         snapshotFlow { pagerState.currentPage }.collect { p ->
-            tab = ((p % pageCount) + pageCount) % pageCount
+            val m = ((p % pageCount) + pageCount) % pageCount
+            if (m in 1..4) lastToolPage = m
+            tab = when {
+                m == 0 -> 0
+                m in 1..4 -> 1
+                else -> m - 3
+            }
         }
     }
 
@@ -210,8 +226,8 @@ fun AppRoot() {
                     t("Sync failed: ", "同步失敗：") + r.errors.joinToString("；")
                 data.profiles.isEmpty() ->
                     t(
-                        "Synced, but no alarms scheduled: no work profiles yet. Go to Roster → add one (e.g. name CMC, keyword cmc), save, then sync again.",
-                        "同步完成，但排唔到任何鬧鐘：仲未有地點設定檔。去「更期」→ 新增（例：名稱 CMC、地點關鍵字 cmc），儲存後再撳同步。"
+                        "Synced, but no alarms scheduled: no work profiles yet. Go to Profile → add one (e.g. name CMC, keyword cmc), save, then sync again.",
+                        "同步完成，但排唔到任何鬧鐘：仲未有地點設定檔。去「設定檔」→ 新增（例：名稱 CMC、地點關鍵字 cmc），儲存後再撳同步。"
                     )
                 data.settings.icalUrl.isBlank() && data.icalEvents.isEmpty() &&
                     data.settings.deviceCalendarIds.isEmpty() && data.manualShifts.isEmpty() ->
@@ -300,27 +316,33 @@ fun AppRoot() {
         Scaffold(
             bottomBar = {
                 NavigationBar {
+                    // Five tabs, single-line labels that fit every phone.
                     val labels = listOf(
                         t("Home", "首頁") to Icons.Filled.Home,
-                        t("Roster", "更期") to Icons.Filled.Place,
-                        t("Calendar", "日曆") to Icons.Filled.DateRange,
-                        t("Alarms", "鬧鐘") to Icons.Filled.Alarm,
                         t("Tools", "工具") to Icons.Filled.Schedule,
+                        t("Profile", "設定檔") to Icons.Filled.Place,
+                        t("Calendar", "日曆") to Icons.Filled.DateRange,
                         t("Settings", "設定") to Icons.Filled.Settings
                     )
                     labels.forEachIndexed { i, (label, icon) ->
                         NavigationBarItem(
                             selected = tab == i,
                             onClick = {
-                                // Shortest hop, wrapping around the ends.
-                                var d = (i - tab + pageCount) % pageCount
+                                // Tools returns to the last-used tool page.
+                                val target = when (i) {
+                                    0 -> 0
+                                    1 -> lastToolPage
+                                    else -> i + 3
+                                }
+                                val cur = ((pagerState.currentPage % pageCount) + pageCount) % pageCount
+                                var d = (target - cur + pageCount) % pageCount
                                 if (d > pageCount / 2) d -= pageCount
                                 scope.launch {
                                     pagerState.animateScrollToPage(pagerState.currentPage + d)
                                 }
                             },
                             icon = { Icon(icon, null) },
-                            label = { Text(label) }
+                            label = { Text(label, maxLines = 1, softWrap = false) }
                         )
                     }
                 }
@@ -337,18 +359,43 @@ fun AppRoot() {
                     modifier = Modifier.weight(1f),
                     beyondViewportPageCount = 1
                 ) { page ->
-                    when (((page % pageCount) + pageCount) % pageCount) {
-                        0 -> HomeScreen(
+                    val m = ((page % pageCount) + pageCount) % pageCount
+                    when {
+                        m == 0 -> HomeScreen(
                             data = data,
                             syncMessage = syncMessage,
                             onSync = { doSync() },
                             onTest = { scope.launch { scheduleTestAlarm(context, store) } },
                             onDelete = { e -> deleteAlarm(e) }
                         )
-                        1 -> ProfilesScreen(data, persistThenSync = ::persistThenSync)
-                        2 -> CalendarScreen(data, persistThenSync = ::persistThenSync)
-                        3 -> NormalAlarmsScreen(data, persistThenSync = ::persistThenSync)
-                        4 -> ToolsScreen(data, persistThenSync = ::persistThenSync)
+                        m in 1..4 -> {
+                            val toolIndex = m - 1
+                            Column(Modifier.fillMaxSize()) {
+                                ToolTabs(
+                                    selected = toolIndex,
+                                    onSelect = { i ->
+                                        var d = (1 + i) - m
+                                        if (d > pageCount / 2) d -= pageCount
+                                        if (d < -pageCount / 2) d += pageCount
+                                        scope.launch {
+                                            pagerState.animateScrollToPage(pagerState.currentPage + d)
+                                        }
+                                    }
+                                )
+                                when (toolIndex) {
+                                    0 -> NormalAlarmsScreen(data, persistThenSync = ::persistThenSync)
+                                    1 -> WorldClockView(data, persistThenSync = ::persistThenSync)
+                                    2 -> StopwatchView()
+                                    else -> TimerView(
+                                        data, persistThenSync = ::persistThenSync,
+                                        timerSel.first, timerSel.second, timerSel.third,
+                                        onSel = { h, min, s -> timerSel = Triple(h, min, s) }
+                                    )
+                                }
+                            }
+                        }
+                        m == 5 -> ProfilesScreen(data, persistThenSync = ::persistThenSync)
+                        m == 6 -> CalendarScreen(data, persistThenSync = ::persistThenSync)
                         else -> SettingsScreen(data, persistThenSync = ::persistThenSync)
                     }
                 }
@@ -411,6 +458,7 @@ fun relative(from: Long, to: Long): String {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen(
     data: AppData,
@@ -499,20 +547,31 @@ fun HomeScreen(
             }
             items(entries) { e ->
                 Card(Modifier.fillMaxWidth()) {
+                    // Delete button stays hidden until the row is LONG-PRESSED
+                    // so it can't be hit accidentally while scrolling.
+                    var showDelete by remember { mutableStateOf(false) }
                     Row(
-                        Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        Modifier
+                            .fillMaxWidth()
+                            .combinedClickable(
+                                onClick = { if (showDelete) showDelete = false },
+                                onLongClick = { showDelete = true }
+                            )
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(Modifier.weight(1f)) {
                             Text(timeFmt.format(Date(e.triggerAt)), fontSize = 20.sp, fontWeight = FontWeight.Bold)
                             Text(e.label, fontSize = 15.sp)
                         }
-                        IconButton(onClick = { onDelete(e) }) {
-                            Icon(
-                                Icons.Filled.Delete,
-                                t("Delete alarm", "刪除鬧鐘"),
-                                tint = MaterialTheme.colorScheme.error
-                            )
+                        if (showDelete) {
+                            IconButton(onClick = { onDelete(e) }) {
+                                Icon(
+                                    Icons.Filled.Delete,
+                                    t("Delete alarm", "刪除鬧鐘"),
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            }
                         }
                     }
                 }

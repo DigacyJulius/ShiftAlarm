@@ -77,30 +77,30 @@ private val TUTORIAL_PAGES = listOf(
             "ShiftAlarm matches your calendar events against these keywords and schedules the right alarm for every shift."
         ),
         listOf(
-            "喺「更期」分頁，每個工作地點開一個設定檔（例：CMC）並填關鍵字；再設定更種代號同起身時間（例：代號 a＝早更，07:00 起身）。",
+            "喺「設定檔」分頁，每個工作地點開一個設定檔（例：CMC）並填關鍵字；再設定更種代號同起身時間（例：代號 a＝早更，07:00 起身）。",
             "ShiftAlarm 會用呢啲關鍵字比對日曆事件，為每個更自動排啱時間嘅鬧鐘。"
         )
     ),
     TutorialPage(
         Icons.Filled.Delete, "Deleting & restoring alarms", "刪除同還原鬧鐘",
         listOf(
-            "On the Home tab, tap the trash icon next to any alarm to delete just that one alarm — other alarms on the same day stay untouched.",
+            "On the Home tab, long-press any alarm to reveal its delete button — tapping it removes just that alarm; other alarms on the same day stay untouched.",
             "Deleted alarms are listed in Settings → Deleted alarms, where you can restore them individually. Expired deleted alarms disappear automatically."
         ),
         listOf(
-            "喺「首頁」撳任何一粒鬧鐘旁邊嘅垃圾桶圖示，只會刪嗰一粒鬧鐘，同日其他鬧鐘唔受影響。",
+            "喺「首頁」長撳任何一粒鬧鐘會浮現刪除掣；撳佢只會刪嗰一粒鬧鐘，同日其他鬧鐘唔受影響。",
             "已刪嘅鬧鐘會列喺「設定 → 已刪除鬧鐘管理」，可以逐粒還原。過咗時間嘅已刪鬧鐘會自動消失。"
         )
     ),
     TutorialPage(
         Icons.Filled.Language, "Travel & normal alarms", "旅行同一般鬧鐘",
         listOf(
-            "The Alarms tab holds your own alarms, independent of the roster — one-off or weekly repeating.",
-            "In Settings → Region alarm you can pin alarms to a timezone, so 07:00 keeps ringing at home-region time while you travel. The Tools tab has a world clock, stopwatch and timer."
+            "In the Tools tab → Alarms you'll find your own alarms, independent of the roster — one-off or weekly repeating. The Tools tab also has a world clock, stopwatch and timer.",
+            "In Settings → Alarms → Region alarm you can pin alarms to a timezone, so 07:00 keeps ringing at home-region time while you travel."
         ),
         listOf(
-            "「鬧鐘」分頁係你自己嘅一般鬧鐘，獨立於更期 — 可設一次性或每週重複。",
-            "「設定 → 地區鬧鐘」可以將鬧鐘綁定時區，去旅行時 07:00 照樣喺家鄉時間響。「工具」分頁有世界時鐘、碼錶同計時器。"
+            "「工具 → 鬧鐘」係你自己嘅一般鬧鐘，獨立於更期 — 可設一次性或每週重複；「工具」分頁仲有世界時鐘、碼錶同計時器。",
+            "「設定 → 鬧鐘 → 地區鬧鐘」可以將鬧鐘綁定時區，去旅行時 07:00 照樣喺家鄉時間響。"
         )
     ),
     TutorialPage(

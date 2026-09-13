@@ -54,7 +54,7 @@ class AlarmForegroundService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val notif = NotificationCompat.Builder(this, AlarmRingingActivity.CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+            .setSmallIcon(com.shiftalarm.app.R.drawable.ic_notification)
             .setContentTitle(t("Alarm", "鬧鐘響起"))
             .setContentText(t("Tap to view", "點按查看"))
             .setCategory(NotificationCompat.CATEGORY_ALARM)

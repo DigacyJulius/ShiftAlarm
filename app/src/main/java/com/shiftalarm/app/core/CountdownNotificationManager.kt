@@ -143,7 +143,7 @@ object CountdownNotificationManager {
         )
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(t("Alarm ringing soon", "鬧鐘即將響起"))
             .setContentText("${alarm.label} • $timeText" + t(" (left)", " (剩餘)"))
             .setSubText(t("Heads-up for the ", "為 ") + alarmTime + t(" alarm", " 嘅鬧鐘備計"))

@@ -1,7 +1,10 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package com.shiftalarm.app.ui
 
 import android.os.SystemClock
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -303,45 +306,24 @@ fun zoneLabel(zoneId: String): String =
 
 fun cityLabel(c: WorldCity): String = if (L10n.lang == "zh") c.zh else c.en
 
+/** Sub-tab header shown at the top of every Tools page. The four tool
+ *  sub-pages are TOP-LEVEL pages of the main pager, so swiping between
+ *  them feels exactly like swiping between the other tabs — no nested
+ *  pager, no gesture handoff threshold. */
 @Composable
-fun ToolsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Unit) {
-    val scope = rememberCoroutineScope()
-    var tab by remember { mutableIntStateOf(0) }
-    // Timer wheel selection lives here (not inside TimerView) so it survives
-    // swiping between tool tabs.
-    var timerSel by remember { mutableStateOf(Triple(0, 5, 0)) }
-    // Finite 3-page pager. Swiping past the first/last tool no longer
-    // wraps — instead the unconsumed gesture flows to the MAIN pager, so
-    // the user can swipe straight from the Tools edge tabs to the
-    // neighbouring app pages (previously the infinite inner pager
-    // swallowed every horizontal swipe).
-    val pagerState = rememberPagerState(initialPage = 0) { 3 }
-    LaunchedEffect(pagerState) {
-        snapshotFlow { pagerState.currentPage }.collect { p -> tab = p }
-    }
-    Column(Modifier.fillMaxSize()) {
-        TabRow(selectedTabIndex = tab) {
-            listOf(t("Clock", "世界時鐘"), t("Stopwatch", "碼錶"), t("Timer", "計時"))
-                .forEachIndexed { i, label ->
-                    Tab(
-                        selected = tab == i,
-                        onClick = {
-                            scope.launch { pagerState.animateScrollToPage(i) }
-                        },
-                        text = { Text(label) }
-                    )
-                }
-        }
-        HorizontalPager(state = pagerState, modifier = Modifier.weight(1f)) { page ->
-            when (((page % 3) + 3) % 3) {
-                0 -> WorldClockView(data, persistThenSync)
-                1 -> StopwatchView()
-                2 -> TimerView(
-                    data, persistThenSync,
-                    timerSel.first, timerSel.second, timerSel.third,
-                    onSel = { h, m, s -> timerSel = Triple(h, m, s) }
-                )
-            }
+fun ToolTabs(selected: Int, onSelect: (Int) -> Unit) {
+    TabRow(selectedTabIndex = selected) {
+        listOf(
+            t("Alarms", "鬧鐘") to 0,
+            t("Clock", "時鐘") to 1,
+            t("Stopwatch", "碼錶") to 2,
+            t("Timer", "計時") to 3
+        ).forEach { (label, i) ->
+            Tab(
+                selected = selected == i,
+                onClick = { onSelect(i) },
+                text = { Text(label, maxLines = 1, softWrap = false) }
+            )
         }
     }
 }
@@ -404,8 +386,16 @@ fun WorldClockView(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
                     else -> ""
                 }
                 Card(Modifier.fillMaxWidth()) {
+                    // Delete button stays hidden until the row is LONG-PRESSED
+                    // so it can't be hit accidentally while scrolling.
+                    var showDelete by remember { mutableStateOf(false) }
                     Row(
-                        Modifier.padding(14.dp).fillMaxWidth(),
+                        Modifier
+                            .padding(14.dp).fillMaxWidth()
+                            .combinedClickable(
+                                onClick = { if (showDelete) showDelete = false },
+                                onLongClick = { showDelete = true }
+                            ),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(Modifier.weight(1f)) {
@@ -428,10 +418,12 @@ fun WorldClockView(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace
                         )
-                        IconButton(onClick = {
-                            persistThenSync { d -> d.copy(worldClocks = d.worldClocks - zone) }
-                        }) {
-                            Icon(Icons.Filled.Delete, contentDescription = t("Delete", "刪除"))
+                        if (showDelete) {
+                            IconButton(onClick = {
+                                persistThenSync { d -> d.copy(worldClocks = d.worldClocks - zone) }
+                            }) {
+                                Icon(Icons.Filled.Delete, contentDescription = t("Delete", "刪除"))
+                            }
                         }
                     }
                 }

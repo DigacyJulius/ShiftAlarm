@@ -1,4 +1,4 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 
 package com.shiftalarm.app.ui
 
@@ -11,6 +11,7 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -27,7 +28,16 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Alarm
+import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -336,7 +346,19 @@ fun NormalAlarmsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) ->
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(data.normalAlarms) { na ->
                 Card(Modifier.fillMaxWidth()) {
-                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    // Delete button stays hidden until the row is LONG-PRESSED
+                    // so it can't be hit accidentally while scrolling.
+                    var showDelete by remember { mutableStateOf(false) }
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .combinedClickable(
+                                onClick = { if (showDelete) showDelete = false },
+                                onLongClick = { showDelete = true }
+                            )
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Column(Modifier.weight(1f)) {
                             Text("%02d:%02d".format(na.hour, na.minute), fontSize = 26.sp, fontWeight = FontWeight.Bold)
                             Text(na.label.ifEmpty { t("Alarm", "鬧鐘") }, fontSize = 14.sp)
@@ -353,16 +375,18 @@ fun NormalAlarmsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) ->
                                 })
                             }
                         })
-                        IconButton(onClick = {
-                            persistThenSync { d ->
-                                d.copy(normalAlarms = d.normalAlarms.filterNot { it.id == na.id })
+                        if (showDelete) {
+                            IconButton(onClick = {
+                                persistThenSync { d ->
+                                    d.copy(normalAlarms = d.normalAlarms.filterNot { it.id == na.id })
+                                }
+                            }) {
+                                Icon(
+                                    Icons.Filled.Delete,
+                                    t("Delete", "刪除"),
+                                    tint = MaterialTheme.colorScheme.error
+                                )
                             }
-                        }) {
-                            Icon(
-                                Icons.Filled.Delete,
-                                t("Delete", "刪除"),
-                                tint = MaterialTheme.colorScheme.error
-                            )
                         }
                     }
                 }
@@ -448,272 +472,429 @@ fun AddNormalAlarmDialog(onDone: (NormalAlarm?) -> Unit) {
 
 // ---------- 設定 ----------
 
+// ---------- 設定（分類目錄式，似手機設定） ----------
+
+/** One browse-style category row: icon + title + subtitle + chevron. */
+@Composable
+private fun SettingsCategory(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    Card(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.padding(start = 14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    subtitle,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Icon(
+                Icons.Filled.ChevronRight, null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+/** Phone-settings-style sub-page: back button + title on top. */
+@Composable
+private fun SettingsSubPage(title: String, onBack: () -> Unit, content: @Composable () -> Unit) {
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(onClick = onBack) { Text(t("← Back", "← 返回")) }
+            Text(title, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        }
+        content()
+    }
+}
+
 @Composable
 fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Unit) {
-    val context = LocalContext.current
-    val s = data.settings
-    val now = System.currentTimeMillis()
-    // Diagnostics now lives behind a button here instead of occupying a
-    // bottom nav tab.
-    var showDiagnostics by remember { mutableStateOf(false) }
-    var showTutorial by remember { mutableStateOf(false) }
-    var showDeviceCals by remember { mutableStateOf(false) }
-    if (showTutorial) {
-        TutorialScreen(onFinished = { showTutorial = false })
-        return
-    }
-    if (showDeviceCals) {
-        Column(Modifier.fillMaxSize()) {
-            TextButton(onClick = { showDeviceCals = false }) { Text(t("← Back to settings", "← 返回設定")) }
+    // Phone-settings style: browse categories, tap one to open its page.
+    var page by remember { mutableStateOf("") }
+    when (page) {
+        "appearance" -> SettingsSubPage(t("Appearance & language", "外觀與語言"), { page = "" }) {
+            SettingsAppearanceBody(data, persistThenSync)
+        }
+        "sources" -> SettingsSubPage(t("Roster sources", "更期來源"), { page = "" }) {
+            SettingsSourcesBody(data, persistThenSync, openDeviceCals = { page = "devicecals" })
+        }
+        "devicecals" -> SettingsSubPage(t("Device calendars", "裝置日曆"), { page = "sources" }) {
             DeviceCalendarsScreen(data, persistThenSync)
         }
-        return
-    }
-    if (showDiagnostics) {
-        Column(Modifier.fillMaxSize()) {
-            TextButton(onClick = { showDiagnostics = false }) { Text(t("← Back to settings", "← 返回設定")) }
+        "alarms" -> SettingsSubPage(t("Alarms", "鬧鐘"), { page = "" }) {
+            SettingsAlarmsBody(data, persistThenSync)
+        }
+        "permissions" -> SettingsSubPage(t("Notifications & permissions", "通知與權限"), { page = "" }) {
+            SettingsPermissionsBody()
+        }
+        "deleted" -> SettingsSubPage(t("Deleted alarms", "已刪除鬧鐘管理"), { page = "" }) {
+            SettingsDeletedBody(data, persistThenSync)
+        }
+        "diagnostics" -> SettingsSubPage(t("Diagnostics", "診斷"), { page = "" }) {
             DiagnosticsScreen(data, persistThenSync)
         }
-        return
+        "tutorial" -> TutorialScreen(onFinished = { page = "" })
+        "about" -> SettingsSubPage(t("About", "關於"), { page = "" }) {
+            SettingsAboutBody()
+        }
+        "ads" -> SettingsSubPage(t("Ads & purchase", "廣告與購買"), { page = "" }) {
+            SettingsAdsBody(data, persistThenSync)
+        }
+        else -> {
+            LazyColumn(
+                Modifier.fillMaxSize().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                item {
+                    Text(t("Settings", "設定"), fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        t("Tap a category to open its settings.", "撳入分類即可修改設定。"),
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                item {
+                    SettingsCategory(
+                        Icons.Filled.Palette,
+                        t("Appearance & language", "外觀與語言"),
+                        t("Dark mode, app language", "深淺色模式、語言")
+                    ) { page = "appearance" }
+                }
+                item {
+                    SettingsCategory(
+                        Icons.Filled.CloudDownload,
+                        t("Roster sources", "更期來源"),
+                        t("iCal URL, device calendars", "iCal 網址、裝置日曆")
+                    ) { page = "sources" }
+                }
+                item {
+                    SettingsCategory(
+                        Icons.Filled.Alarm,
+                        t("Alarms", "鬧鐘"),
+                        t("Snooze, schedule days, region alarm", "貪睡間隔、預排日數、地區鬧鐘")
+                    ) { page = "alarms" }
+                }
+                item {
+                    SettingsCategory(
+                        Icons.Filled.NotificationsActive,
+                        t("Notifications & permissions", "通知與權限"),
+                        t("Battery, exact alarms, DND…", "電池優化、精確鬧鐘、勿擾等")
+                    ) { page = "permissions" }
+                }
+                item {
+                    SettingsCategory(
+                        Icons.Filled.Delete,
+                        t("Deleted alarms", "已刪除鬧鐘管理"),
+                        t("Restore deleted roster alarms", "還原已刪除嘅更期鬧鐘")
+                    ) { page = "deleted" }
+                }
+                item {
+                    SettingsCategory(
+                        Icons.Filled.BugReport,
+                        t("Diagnostics", "診斷"),
+                        t("Sync data, .ics import", "同步資料、匯入 .ics")
+                    ) { page = "diagnostics" }
+                }
+                item {
+                    SettingsCategory(
+                        Icons.Filled.School,
+                        t("Tutorial", "教學"),
+                        t("How to use this app", "使用方法")
+                    ) { page = "tutorial" }
+                }
+                item {
+                    SettingsCategory(
+                        Icons.Filled.Info,
+                        t("About", "關於"),
+                        t("Version info", "版本資訊")
+                    ) { page = "about" }
+                }
+                // Ads/purchase only appears while monetization is enabled.
+                if (Monetization.ENABLED) {
+                    item {
+                        SettingsCategory(
+                            Icons.Filled.ShoppingCart,
+                            t("Ads & purchase", "廣告與購買"),
+                            t("Remove ads", "移除廣告")
+                        ) { page = "ads" }
+                    }
+                }
+            }
+        }
     }
+}
+
+@Composable
+private fun SettingsAppearanceBody(data: AppData, persistThenSync: ((AppData) -> AppData) -> Unit) {
+    val s = data.settings
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text(t("Language", "語言"), fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("en" to "English", "zh" to "中文").forEach { (value, label) ->
+                if (s.language == value) {
+                    Button(onClick = {
+                        L10n.lang = value
+                        persistThenSync { d -> d.copy(settings = d.settings.copy(language = value)) }
+                    }) { Text(label) }
+                } else {
+                    OutlinedButton(onClick = {
+                        L10n.lang = value
+                        persistThenSync { d -> d.copy(settings = d.settings.copy(language = value)) }
+                    }) { Text(label) }
+                }
+            }
+        }
+        Text(t("Appearance", "外觀"), fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        val options = listOf(
+            "system" to t("Follow system", "跟隨系統"),
+            "light" to t("Light", "淺色"),
+            "dark" to t("Dark", "深色")
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            options.forEach { (value, label) ->
+                if (s.darkMode == value) {
+                    Button(onClick = {
+                        persistThenSync { d -> d.copy(settings = d.settings.copy(darkMode = value)) }
+                    }) { Text(label) }
+                } else {
+                    OutlinedButton(onClick = {
+                        persistThenSync { d -> d.copy(settings = d.settings.copy(darkMode = value)) }
+                    }) { Text(label) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsSourcesBody(
+    data: AppData,
+    persistThenSync: ((AppData) -> AppData) -> Unit,
+    openDeviceCals: () -> Unit
+) {
+    val s = data.settings
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                t("iCal URL (roster source)", "iCal 網址（更期來源）"),
+                fontSize = 16.sp, fontWeight = FontWeight.Bold
+            )
+            var icalUrl by remember(s.icalUrl) { mutableStateOf(s.icalUrl) }
+            Text(
+                t(
+                    "Paste your Google Calendar secret iCal address (Settings → Import & export → Secret address). The app fetches it every hour. Priority: imported .ics file → device calendars → iCal URL. Shifts entered on the Calendar page always count.",
+                    "貼上 Google Calendar 的「私人 iCal 網址」（齒輪設定 → 匯入和匯出／整合日曆 → 私人網址）。App 每小時自動抓取一次。優先次序：匯入嘅 .ics 檔案 → 裝置日曆 → iCal 網址。「日曆」分頁手動填嘅更一定會計。"
+                ),
+                fontSize = 12.sp
+            )
+            OutlinedTextField(
+                value = icalUrl,
+                onValueChange = { icalUrl = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(t("Secret iCal address", "iCal 私人網址")) }
+            )
+            Button(onClick = {
+                persistThenSync { d -> d.copy(settings = d.settings.copy(icalUrl = icalUrl.trim())) }
+            }) { Text(t("Save & sync now", "儲存並立即同步")) }
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                t("Device calendars (roster source)", "裝置日曆（更期來源）"),
+                fontSize = 16.sp, fontWeight = FontWeight.Bold
+            )
+            Text(
+                t(
+                    "Read shifts straight from the calendar apps on this phone (Google Calendar, Samsung Calendar, …). Pick which calendars to use. Used only when no .ics file is imported.",
+                    "直接讀取手機上日曆 app（Google 日曆、Samsung 日曆等）嘅更期，揀選用邊個日曆。只喺冇匯入 .ics 檔案時先會用。"
+                ),
+                fontSize = 12.sp
+            )
+            OutlinedButton(onClick = openDeviceCals, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    if (s.deviceCalendarIds.isEmpty()) t("Select calendars", "揀選日曆")
+                    else t("Select calendars (", "揀選日曆（已選 ") + s.deviceCalendarIds.size + t(" selected)", " 個）")
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsAlarmsBody(data: AppData, persistThenSync: ((AppData) -> AppData) -> Unit) {
+    val s = data.settings
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            IntField(t("Snooze interval (minutes)", "貪睡間隔（分鐘）"), s.snoozeMinutes) { v -> persistThenSync { d -> d.copy(settings = d.settings.copy(snoozeMinutes = v)) } }
+            IntField(t("Days to schedule (min 7)", "預排日數（日，最少 7）"), s.lookaheadDays) { v -> persistThenSync { d -> d.copy(settings = d.settings.copy(lookaheadDays = v.coerceAtLeast(7))) } }
+        }
+        Text(
+            t("Region alarm (for travel)", "地區鬧鐘（旅遊用）"),
+            fontSize = 16.sp, fontWeight = FontWeight.Bold
+        )
+        var showTzPicker by remember { mutableStateOf(false) }
+        val tzLabel = if (s.alarmTimezone.isBlank()) t("Follow device", "跟隨裝置") else zoneLabel(s.alarmTimezone)
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                t(
+                    "Normal alarms ring at the selected region's local time. Pick Hong Kong and your 07:00 alarm still rings at 07:00 Hong Kong time while you're in Tokyo. Roster alarms follow the device timezone.",
+                    "一般鬧鐘會喺選定地區嘅當地時間響。例如揀咗香港，去到東京旅行，07:00 鬧鐘照樣喺香港時間 07:00 響。更期鬧鐘則跟裝置時區。"
+                ),
+                fontSize = 12.sp
+            )
+            OutlinedButton(
+                onClick = { showTzPicker = true },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text(t("Alarm timezone: ", "鬧鐘時區：") + tzLabel) }
+        }
+        if (showTzPicker) {
+            var tzQuery by remember { mutableStateOf("") }
+            val candidates =
+                (listOf("" to t("Follow device", "跟隨裝置")) +
+                    WORLD_CITIES.map { it.zone to cityLabel(it) })
+                    .filter { (zone, label) ->
+                        zone.isEmpty() ||
+                            label.contains(tzQuery, ignoreCase = true) ||
+                            zone.contains(tzQuery, ignoreCase = true)
+                    }
+            AlertDialog(
+                onDismissRequest = { showTzPicker = false },
+                title = { Text(t("Pick alarm timezone", "揀鬧鐘時區")) },
+                text = {
+                    Column {
+                        OutlinedTextField(
+                            value = tzQuery,
+                            onValueChange = { tzQuery = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text(t("Search city / country", "搜尋城市／國家")) }
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        LazyColumn(Modifier.height(340.dp)) {
+                            items(candidates, key = { it.first + it.second }) { (zone, label) ->
+                                Text(
+                                    label,
+                                    fontSize = 15.sp,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            persistThenSync { d ->
+                                                d.copy(settings = d.settings.copy(alarmTimezone = zone))
+                                            }
+                                            showTzPicker = false
+                                        }
+                                        .padding(vertical = 10.dp)
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showTzPicker = false }) { Text(t("Close", "關閉")) }
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsPermissionsBody() {
+    val context = LocalContext.current
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Button(onClick = {
+            runCatching {
+                context.startActivity(
+                    Intent(
+                        android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                        android.net.Uri.parse("package:" + context.packageName)
+                    )
+                )
+            }
+        }, modifier = Modifier.fillMaxWidth()) { Text(t("Exempt battery optimization (strongly recommended)", "豁免電池優化（強烈建議）")) }
+
+        val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        if (Build.VERSION.SDK_INT >= 31 && !am.canScheduleExactAlarms()) {
+            Button(onClick = {
+                runCatching {
+                    context.startActivity(
+                        Intent(
+                            android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                            android.net.Uri.parse("package:" + context.packageName)
+                        )
+                    )
+                }
+            }, modifier = Modifier.fillMaxWidth()) { Text(t("Allow exact alarms", "允許精確鬧鐘")) }
+        }
+
+        if (Build.VERSION.SDK_INT >= 34) {
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+            if (!nm.canUseFullScreenIntent()) {
+                Button(onClick = {
+                    runCatching {
+                        context.startActivity(
+                            Intent(
+                                android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+                                android.net.Uri.parse("package:" + context.packageName)
+                            )
+                        )
+                    }
+                }, modifier = Modifier.fillMaxWidth()) { Text(t("Allow full-screen alarm notifications", "允許全螢幕鬧鐘通知")) }
+            }
+        }
+
+        // DND / Notification Policy Access
+        val nmPolicy = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        if (Build.VERSION.SDK_INT >= 23 && !nmPolicy.isNotificationPolicyAccessGranted) {
+            Button(onClick = {
+                runCatching {
+                    context.startActivity(
+                        Intent(android.provider.Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
+                    )
+                }
+            }, modifier = Modifier.fillMaxWidth()) { Text(t("Allow Do-Not-Disturb override", "允許勿擾模式繞過")) }
+        }
+    }
+}
+
+@Composable
+private fun SettingsDeletedBody(data: AppData, persistThenSync: ((AppData) -> AppData) -> Unit) {
+    val now = System.currentTimeMillis()
     // Deleted alarms whose original fire time has passed are hidden —
     // e.g. a deleted 09:00 alarm disappears from this list at 09:01.
     // Legacy entries without a recorded time are still shown.
     val deletedList = data.dismissedAlarmMeta.entries.toList()
         .filter { (data.dismissedAlarmTimes[it.key] ?: Long.MAX_VALUE) > now }
     val deletedDateFmt = remember(L10n.lang) { L10n.newShortDateFmt() }
-
     LazyColumn(
         Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        item { Text(t("Settings", "設定"), fontSize = 22.sp, fontWeight = FontWeight.Bold) }
-
-        item { Text(t("Language", "語言"), fontSize = 16.sp, fontWeight = FontWeight.Bold) }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("en" to "English", "zh" to "中文").forEach { (value, label) ->
-                    if (s.language == value) {
-                        Button(onClick = {
-                            L10n.lang = value
-                            persistThenSync { d -> d.copy(settings = d.settings.copy(language = value)) }
-                        }) { Text(label) }
-                    } else {
-                        OutlinedButton(onClick = {
-                            L10n.lang = value
-                            persistThenSync { d -> d.copy(settings = d.settings.copy(language = value)) }
-                        }) { Text(label) }
-                    }
-                }
-            }
-        }
-
-        item { Text(t("Appearance", "外觀"), fontSize = 16.sp, fontWeight = FontWeight.Bold) }
-        item {
-            val options = listOf(
-                "system" to t("Follow system", "跟隨系統"),
-                "light" to t("Light", "淺色"),
-                "dark" to t("Dark", "深色")
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                options.forEach { (value, label) ->
-                    if (s.darkMode == value) {
-                        Button(onClick = {
-                            persistThenSync { d -> d.copy(settings = d.settings.copy(darkMode = value)) }
-                        }) { Text(label) }
-                    } else {
-                        OutlinedButton(onClick = {
-                            persistThenSync { d -> d.copy(settings = d.settings.copy(darkMode = value)) }
-                        }) { Text(label) }
-                    }
-                }
-            }
-        }
-
-        item {
-            Text(
-                t("iCal URL (roster source)", "iCal 網址（更期來源）"),
-                fontSize = 16.sp, fontWeight = FontWeight.Bold
-            )
-        }
-        item {
-            var icalUrl by remember(s.icalUrl) { mutableStateOf(s.icalUrl) }
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    t(
-                        "Paste your Google Calendar secret iCal address (Settings → Import & export → Secret address). The app fetches it every hour. Priority: imported .ics file → device calendars → iCal URL. Shifts entered on the Calendar page always count.",
-                        "貼上 Google Calendar 的「私人 iCal 網址」（齒輪設定 → 匯入和匯出／整合日曆 → 私人網址）。App 每小時自動抓取一次。優先次序：匯入嘅 .ics 檔案 → 裝置日曆 → iCal 網址。「日曆」分頁手動填嘅更一定會計。"
-                    ),
-                    fontSize = 12.sp
-                )
-                OutlinedTextField(
-                    value = icalUrl,
-                    onValueChange = { icalUrl = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(t("Secret iCal address", "iCal 私人網址")) }
-                )
-                Button(onClick = {
-                    persistThenSync { d -> d.copy(settings = d.settings.copy(icalUrl = icalUrl.trim())) }
-                }) { Text(t("Save & sync now", "儲存並立即同步")) }
-            }
-        }
-
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    t("Device calendars (roster source)", "裝置日曆（更期來源）"),
-                    fontSize = 16.sp, fontWeight = FontWeight.Bold
-                )
-                Text(
-                    t(
-                        "Read shifts straight from the calendar apps on this phone (Google Calendar, Samsung Calendar, …). Pick which calendars to use. Used only when no .ics file is imported.",
-                        "直接讀取手機上日曆 app（Google 日曆、Samsung 日曆等）嘅更期，揀選用邊個日曆。只喺冇匯入 .ics 檔案時先會用。"
-                    ),
-                    fontSize = 12.sp
-                )
-                OutlinedButton(
-                    onClick = { showDeviceCals = true },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        if (s.deviceCalendarIds.isEmpty()) t("Select calendars", "揀選日曆")
-                        else t("Select calendars (", "揀選日曆（已選 ") + s.deviceCalendarIds.size + t(" selected)", " 個）")
-                    )
-                }
-            }
-        }
-
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                IntField(t("Snooze interval (minutes)", "貪睡間隔（分鐘）"), s.snoozeMinutes) { v -> persistThenSync { d -> d.copy(settings = d.settings.copy(snoozeMinutes = v)) } }
-                IntField(t("Days to schedule (min 7)", "預排日數（日，最少 7）"), s.lookaheadDays) { v -> persistThenSync { d -> d.copy(settings = d.settings.copy(lookaheadDays = v.coerceAtLeast(7))) } }
-            }
-        }
-
-        item {
-            Text(
-                t("Region alarm (for travel)", "地區鬧鐘（旅遊用）"),
-                fontSize = 16.sp, fontWeight = FontWeight.Bold
-            )
-        }
-        item {
-            var showTzPicker by remember { mutableStateOf(false) }
-            val tzLabel = if (s.alarmTimezone.isBlank()) t("Follow device", "跟隨裝置") else zoneLabel(s.alarmTimezone)
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    t(
-                        "Normal alarms ring at the selected region's local time. Pick Hong Kong and your 07:00 alarm still rings at 07:00 Hong Kong time while you're in Tokyo. Roster alarms follow the device timezone.",
-                        "一般鬧鐘會喺選定地區嘅當地時間響。例如揀咗香港，去到東京旅行，07:00 鬧鐘照樣喺香港時間 07:00 響。更期鬧鐘則跟裝置時區。"
-                    ),
-                    fontSize = 12.sp
-                )
-                OutlinedButton(
-                    onClick = { showTzPicker = true },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text(t("Alarm timezone: ", "鬧鐘時區：") + tzLabel) }
-            }
-            if (showTzPicker) {
-                var tzQuery by remember { mutableStateOf("") }
-                val candidates =
-                    (listOf("" to t("Follow device", "跟隨裝置")) +
-                        WORLD_CITIES.map { it.zone to cityLabel(it) })
-                        .filter { (zone, label) ->
-                            zone.isEmpty() ||
-                                label.contains(tzQuery, ignoreCase = true) ||
-                                zone.contains(tzQuery, ignoreCase = true)
-                        }
-                AlertDialog(
-                    onDismissRequest = { showTzPicker = false },
-                    title = { Text(t("Pick alarm timezone", "揀鬧鐘時區")) },
-                    text = {
-                        Column {
-                            OutlinedTextField(
-                                value = tzQuery,
-                                onValueChange = { tzQuery = it },
-                                modifier = Modifier.fillMaxWidth(),
-                                label = { Text(t("Search city / country", "搜尋城市／國家")) }
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            LazyColumn(Modifier.height(340.dp)) {
-                                items(candidates, key = { it.first + it.second }) { (zone, label) ->
-                                    Text(
-                                        label,
-                                        fontSize = 15.sp,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable {
-                                                persistThenSync { d ->
-                                                    d.copy(settings = d.settings.copy(alarmTimezone = zone))
-                                                }
-                                                showTzPicker = false
-                                            }
-                                            .padding(vertical = 10.dp)
-                                    )
-                                }
-                            }
-                        }
-                    },
-                    confirmButton = {
-                        TextButton(onClick = { showTzPicker = false }) { Text(t("Close", "關閉")) }
-                    }
-                )
-            }
-        }
-
-        // Monetization section — hidden while ads/purchases are disabled
-        // globally (Monetization.ENABLED = false keeps the code intact).
-        if (Monetization.ENABLED) {
-            item { Text(t("Ads", "廣告"), fontSize = 16.sp, fontWeight = FontWeight.Bold) }
-            item {
-                if (s.adsRemoved) {
-                    Text(t("✓ Ads removed — thank you!", "✓ 已移除廣告，多謝支持！"), fontSize = 14.sp)
-                } else {
-                    var purchaseMsg by remember { mutableStateOf<String?>(null) }
-                    var adUnit by remember(s.adUnitId) { mutableStateOf(s.adUnitId) }
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(
-                            t(
-                                "The ad banner only shows at the top — never full-page. A one-time purchase removes it forever.",
-                                "廣告條只會顯示喺頂部，唔會彈出全頁廣告。一次性購買即可永久移除廣告。"
-                            ),
-                            fontSize = 12.sp
-                        )
-                        Button(onClick = {
-                            val activity = context as? android.app.Activity
-                            if (activity == null) {
-                                purchaseMsg = t("Cannot start purchase", "無法啟動購買流程")
-                                return@Button
-                            }
-                            com.shiftalarm.app.core.AdsBilling.purchase(activity) { ok, msg ->
-                                purchaseMsg = msg
-                                if (ok) persistThenSync { d ->
-                                    d.copy(settings = d.settings.copy(adsRemoved = true))
-                                }
-                            }
-                        }) { Text(t("Remove ads (one-time purchase)", "移除廣告（一次性購買）")) }
-                        purchaseMsg?.let { Text(it, fontSize = 12.sp) }
-                        OutlinedTextField(
-                            value = adUnit,
-                            onValueChange = { adUnit = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text(t("AdMob ad unit id (optional, blank = test ads)", "AdMob 廣告單元 ID（選填，留空＝測試廣告）")) }
-                        )
-                        OutlinedButton(onClick = {
-                            persistThenSync { d ->
-                                d.copy(settings = d.settings.copy(adUnitId = adUnit.trim()))
-                            }
-                        }) { Text(t("Save ad unit id", "儲存廣告單元 ID")) }
-                    }
-                }
-            }
-        }
-
-        item {
-            Text(
-                t("Deleted alarms", "已刪除鬧鐘管理"),
-                fontSize = 16.sp, fontWeight = FontWeight.Bold
-            )
-        }
         item {
             Text(
                 t(
@@ -766,85 +947,83 @@ fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
                 ) { Text(t("Restore all deleted roster alarms", "還原全部已刪除嘅更期鬧鐘")) }
             }
         }
+    }
+}
 
-        item {
+/** Ads / purchase page — only reachable while monetization is enabled. */
+@Composable
+private fun SettingsAdsBody(data: AppData, persistThenSync: ((AppData) -> AppData) -> Unit) {
+    val context = LocalContext.current
+    val s = data.settings
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)
+    ) {
+        if (s.adsRemoved) {
+            Text(t("✓ Ads removed — thank you!", "✓ 已移除廣告，多謝支持！"), fontSize = 14.sp)
+        } else {
+            var purchaseMsg by remember { mutableStateOf<String?>(null) }
+            var adUnit by remember(s.adUnitId) { mutableStateOf(s.adUnitId) }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    t(
+                        "The ad banner only shows at the top — never full-page. A one-time purchase removes it forever.",
+                        "廣告條只會顯示喺頂部，唔會彈出全頁廣告。一次性購買即可永久移除廣告。"
+                    ),
+                    fontSize = 12.sp
+                )
                 Button(onClick = {
-                    runCatching {
-                        context.startActivity(
-                            Intent(
-                                android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                                android.net.Uri.parse("package:" + context.packageName)
-                            )
-                        )
+                    val activity = context as? android.app.Activity
+                    if (activity == null) {
+                        purchaseMsg = t("Cannot start purchase", "無法啟動購買流程")
+                        return@Button
                     }
-                }) { Text(t("Exempt battery optimization (strongly recommended)", "豁免電池優化（強烈建議）")) }
-
-                val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-                if (Build.VERSION.SDK_INT >= 31 && !am.canScheduleExactAlarms()) {
-                    Button(onClick = {
-                        runCatching {
-                            context.startActivity(
-                                Intent(
-                                    android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
-                                    android.net.Uri.parse("package:" + context.packageName)
-                                )
-                            )
+                    com.shiftalarm.app.core.AdsBilling.purchase(activity) { ok, msg ->
+                        purchaseMsg = msg
+                        if (ok) persistThenSync { d ->
+                            d.copy(settings = d.settings.copy(adsRemoved = true))
                         }
-                    }) { Text(t("Allow exact alarms", "允許精確鬧鐘")) }
-                }
-
-                if (Build.VERSION.SDK_INT >= 34) {
-                    val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-                    if (!nm.canUseFullScreenIntent()) {
-                        Button(onClick = {
-                            runCatching {
-                                context.startActivity(
-                                    Intent(
-                                        android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
-                                        android.net.Uri.parse("package:" + context.packageName)
-                                    )
-                                )
-                            }
-                        }) { Text(t("Allow full-screen alarm notifications", "允許全螢幕鬧鐘通知")) }
                     }
-                }
-
-                // DND / Notification Policy Access
-                val nmPolicy = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-                if (Build.VERSION.SDK_INT >= 23 && !nmPolicy.isNotificationPolicyAccessGranted) {
-                    Button(onClick = {
-                        runCatching {
-                            context.startActivity(
-                                Intent(android.provider.Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
-                            )
-                        }
-                    }) { Text(t("Allow Do-Not-Disturb override", "允許勿擾模式繞過")) }
-                }
-
-                // Diagnostics moved here from the bottom nav bar.
-                OutlinedButton(
-                    onClick = { showDiagnostics = true },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text(t("Diagnostics / calendar sync data", "診斷／日曆同步資料")) }
-
-                // In-app tutorial, reopenable anytime.
-                OutlinedButton(
-                    onClick = { showTutorial = true },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text(t("Tutorial (how to use)", "教學（使用方法）")) }
+                }) { Text(t("Remove ads (one-time purchase)", "移除廣告（一次性購買）")) }
+                purchaseMsg?.let { Text(it, fontSize = 12.sp) }
+                OutlinedTextField(
+                    value = adUnit,
+                    onValueChange = { adUnit = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(t("AdMob ad unit id (optional, blank = test ads)", "AdMob 廣告單元 ID（選填，留空＝測試廣告）")) }
+                )
+                OutlinedButton(onClick = {
+                    persistThenSync { d ->
+                        d.copy(settings = d.settings.copy(adUnitId = adUnit.trim()))
+                    }
+                }) { Text(t("Save ad unit id", "儲存廣告單元 ID")) }
             }
         }
-        item {
-            val version = runCatching {
-                context.packageManager.getPackageInfo(context.packageName, 0).versionName
-            }.getOrDefault("?")
-            Text(
-                t("Version ", "版本 ") + version,
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+    }
+}
+
+@Composable
+private fun SettingsAboutBody() {
+    val context = LocalContext.current
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        val version = runCatching {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName
+        }.getOrDefault("?")
+        Text("Shiftlarm", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text(
+            t("Version ", "版本 ") + version,
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            t(
+                "Turns your work-roster calendar into alarm clocks automatically.",
+                "自動將你嘅更期日曆變成鬧鐘。"
+            ),
+            fontSize = 13.sp
+        )
     }
 }
 
