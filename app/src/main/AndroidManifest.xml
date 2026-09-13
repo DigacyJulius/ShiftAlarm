@@ -4,6 +4,13 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- USE_EXACT_ALARM: auto-granted on Android 13+ and cannot be revoked,
+         so alarms ALWAYS ring exactly. Restored deliberately (an earlier
+         change removed it to make the app visible in the special-access list,
+         which left alarms silent on phones where the user never granted
+         "Alarms & reminders" manually). This app IS an alarm clock, which
+         is exactly what this permission is for. -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <!-- SYSTEM_ALERT_WINDOW ("display over other apps") exempts the app from
          background-activity-launch restrictions, letting the ringing screen pop
          up immediately even when another app is in the foreground. -->

@@ -355,6 +355,25 @@ fun AppRoot() {
                 if (Monetization.ENABLED && !data.settings.adsRemoved) {
                     AdBanner(adUnitId = data.settings.adUnitId)
                 }
+                // Tools sub-tab bar, hoisted ABOVE the pager: during a swipe
+                // you see ONE fixed bar with only the content sliding. The
+                // indicator follows the gesture (targetPage) so it feels
+                // connected instead of jumping at the end.
+                val barPage = if (pagerState.isScrollInProgress) pagerState.targetPage else pagerState.currentPage
+                val bm = ((barPage % pageCount) + pageCount) % pageCount
+                if (bm in 1..4) {
+                    ToolTabs(
+                        selected = bm - 1,
+                        onSelect = { i ->
+                            var d = (1 + i) - bm
+                            if (d > pageCount / 2) d -= pageCount
+                            if (d < -pageCount / 2) d += pageCount
+                            scope.launch {
+                                pagerState.animateScrollToPage(pagerState.currentPage + d)
+                            }
+                        }
+                    )
+                }
                 HorizontalPager(
                     state = pagerState,
                     modifier = Modifier.weight(1f),
@@ -370,29 +389,15 @@ fun AppRoot() {
                             onDelete = { e -> deleteAlarm(e) }
                         )
                         m in 1..4 -> {
-                            val toolIndex = m - 1
-                            Column(Modifier.fillMaxSize()) {
-                                ToolTabs(
-                                    selected = toolIndex,
-                                    onSelect = { i ->
-                                        var d = (1 + i) - m
-                                        if (d > pageCount / 2) d -= pageCount
-                                        if (d < -pageCount / 2) d += pageCount
-                                        scope.launch {
-                                            pagerState.animateScrollToPage(pagerState.currentPage + d)
-                                        }
-                                    }
+                            when (m - 1) {
+                                0 -> NormalAlarmsScreen(data, persistThenSync = ::persistThenSync)
+                                1 -> WorldClockView(data, persistThenSync = ::persistThenSync)
+                                2 -> StopwatchView()
+                                else -> TimerView(
+                                    data, persistThenSync = ::persistThenSync,
+                                    timerSel.first, timerSel.second, timerSel.third,
+                                    onSel = { h, min, s -> timerSel = Triple(h, min, s) }
                                 )
-                                when (toolIndex) {
-                                    0 -> NormalAlarmsScreen(data, persistThenSync = ::persistThenSync)
-                                    1 -> WorldClockView(data, persistThenSync = ::persistThenSync)
-                                    2 -> StopwatchView()
-                                    else -> TimerView(
-                                        data, persistThenSync = ::persistThenSync,
-                                        timerSel.first, timerSel.second, timerSel.third,
-                                        onSel = { h, min, s -> timerSel = Triple(h, min, s) }
-                                    )
-                                }
                             }
                         }
                         m == 5 -> ProfilesScreen(data, persistThenSync = ::persistThenSync)

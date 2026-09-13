@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -94,6 +95,9 @@ import kotlinx.coroutines.withContext
 fun ProfilesScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Unit) {
     var editing by remember { mutableStateOf<WorkProfile?>(null) }
     val current = editing
+    // Android back goes one level up (close the editor) instead of
+    // exiting the app.
+    BackHandler(enabled = current != null) { editing = null }
     if (current != null) {
         val isNew = data.profiles.none { it.id == current.id }
         ProfileEditScreen(
@@ -531,6 +535,9 @@ private fun SettingsSubPage(title: String, onBack: () -> Unit, content: @Composa
 fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Unit) {
     // Phone-settings style: browse categories, tap one to open its page.
     var page by remember { mutableStateOf("") }
+    // Android back goes one level up (close the sub-page) instead of
+    // exiting the app.
+    BackHandler(enabled = page.isNotEmpty()) { page = "" }
     when (page) {
         "appearance" -> SettingsSubPage(t("Appearance & language", "外觀與語言"), { page = "" }) {
             SettingsAppearanceBody(data, persistThenSync)

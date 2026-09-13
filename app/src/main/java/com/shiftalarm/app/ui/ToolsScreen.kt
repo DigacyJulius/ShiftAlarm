@@ -32,7 +32,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -306,13 +306,20 @@ fun zoneLabel(zoneId: String): String =
 
 fun cityLabel(c: WorldCity): String = if (L10n.lang == "zh") c.zh else c.en
 
-/** Sub-tab header shown at the top of every Tools page. The four tool
+/** Sub-tab header shown ABOVE the pager while a Tools page is visible.
+ *  It is hoisted out of the pages themselves, so during a swipe you see
+ *  ONE fixed tab bar with only the content sliding — not two copies of
+ *  the bar sliding past each other. ScrollableTabRow gives every label
+ *  its full width ("Stopwatch" is never truncated). The four tool
  *  sub-pages are TOP-LEVEL pages of the main pager, so swiping between
- *  them feels exactly like swiping between the other tabs — no nested
- *  pager, no gesture handoff threshold. */
+ *  them feels exactly like swiping between the other tabs. */
 @Composable
 fun ToolTabs(selected: Int, onSelect: (Int) -> Unit) {
-    TabRow(selectedTabIndex = selected) {
+    ScrollableTabRow(
+        selectedTabIndex = selected,
+        edgePadding = 16.dp,
+        modifier = Modifier.fillMaxWidth()
+    ) {
         listOf(
             t("Alarms", "鬧鐘") to 0,
             t("Clock", "時鐘") to 1,
