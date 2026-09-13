@@ -842,25 +842,67 @@ private fun SettingsAlarmsBody(data: AppData, persistThenSync: ((AppData) -> App
 }
 
 @Composable
+private fun SettingsPermissionRow(label: String, ok: Boolean, detail: String) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(label, fontSize = 14.sp)
+            Text(
+                detail, fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Text(
+            if (ok) t("OK", "已開啟") else t("Off", "未開啟"),
+            fontSize = 12.sp, fontWeight = FontWeight.Bold,
+            color = if (ok) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.error
+        )
+    }
+}
+
+@Composable
 private fun SettingsPermissionsBody() {
     val context = LocalContext.current
+    val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+    val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+    val pm = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Button(onClick = {
-            runCatching {
-                context.startActivity(
-                    Intent(
-                        android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                        android.net.Uri.parse("package:" + context.packageName)
-                    )
-                )
-            }
-        }, modifier = Modifier.fillMaxWidth()) { Text(t("Exempt battery optimization (strongly recommended)", "豁免電池優化（強烈建議）")) }
+        Text(
+            t(
+                "Current status of every permission the alarm needs. Anything shown as Off has a button below it.",
+                "呢度列出鬧鐘需要嘅全部權限同現時狀態。顯示「未開啟」嘅項目下面會有按鈕可以撳。"
+            ),
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
 
-        val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        if (Build.VERSION.SDK_INT >= 31 && !am.canScheduleExactAlarms()) {
+        // --- Alarms & reminders (exact alarms) ---
+        // On Android 13+ the app carries the built-in alarm-clock permission
+        // (USE_EXACT_ALARM): auto-granted at install and irrevocable, so the
+        // app NEVER asks — it already has it, and Android hides it from the
+        // special-access list. That is why this row should read OK.
+        val exactOk = Build.VERSION.SDK_INT < 31 || am.canScheduleExactAlarms()
+        val exactDetail = when {
+            Build.VERSION.SDK_INT >= 33 -> t(
+                "Built into the app on Android 13+: always granted and cannot be revoked, so the app never needs to ask.",
+                "Android 13+ 起內建於 app：自動授予、無法撤銷，所以唔會彈出權限要求，屬正常。"
+            )
+            Build.VERSION.SDK_INT >= 31 -> if (exactOk) {
+                t("Granted via the \"Alarms & reminders\" special permission.", "已透過「鬧鐘和提醒」特殊權限授予。")
+            } else {
+                t("Required so alarms ring exactly on time.", "必須開啟，鬧鐘先可以準時響。")
+            }
+            else -> t("Not required on this Android version.", "呢個 Android 版本唔需要此權限。")
+        }
+        SettingsPermissionRow(
+            t("Alarms & reminders (exact alarms)", "鬧鐘和提醒（精確鬧鐘）"),
+            exactOk, exactDetail
+        )
+        if (Build.VERSION.SDK_INT >= 31 && !exactOk) {
             Button(onClick = {
                 runCatching {
                     context.startActivity(
@@ -873,9 +915,49 @@ private fun SettingsPermissionsBody() {
             }, modifier = Modifier.fillMaxWidth()) { Text(t("Allow exact alarms", "允許精確鬧鐘")) }
         }
 
+        // --- Notifications (Android 13+) ---
+        if (Build.VERSION.SDK_INT >= 33) {
+            val notifOk = androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.POST_NOTIFICATIONS
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            SettingsPermissionRow(
+                t("Notifications", "通知"), notifOk,
+                t("Needed to show the ringing alarm notification.", "用嚟顯示響鬧鐘時嘅通知。")
+            )
+            if (!notifOk) {
+                val launcher = rememberLauncherForActivityResult(
+                    androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+                ) { }
+                Button(onClick = {
+                    runCatching { launcher.launch(android.Manifest.permission.POST_NOTIFICATIONS) }
+                }, modifier = Modifier.fillMaxWidth()) { Text(t("Allow notifications", "允許通知")) }
+            }
+        }
+
+        // --- DND override ---
+        val dndOk = nm.isNotificationPolicyAccessGranted
+        SettingsPermissionRow(
+            t("Do-Not-Disturb override", "勿擾模式繞過"), dndOk,
+            t("Lets the alarm ring at full volume in Do-Not-Disturb.", "喺勿擾模式都可以全音量響鬧鐘。")
+        )
+        if (!dndOk) {
+            Button(onClick = {
+                runCatching {
+                    context.startActivity(
+                        Intent(android.provider.Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
+                    )
+                }
+            }, modifier = Modifier.fillMaxWidth()) { Text(t("Allow Do-Not-Disturb override", "允許勿擾模式繞過")) }
+        }
+
+        // --- Full-screen notifications (Android 14+) ---
         if (Build.VERSION.SDK_INT >= 34) {
-            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-            if (!nm.canUseFullScreenIntent()) {
+            val fsOk = nm.canUseFullScreenIntent()
+            SettingsPermissionRow(
+                t("Full-screen alarm notifications", "全螢幕鬧鐘通知"), fsOk,
+                t("Shows the ringing screen even when the phone is locked.", "鎖屏時都可以彈出響鬧鐘畫面。")
+            )
+            if (!fsOk) {
                 Button(onClick = {
                     runCatching {
                         context.startActivity(
@@ -889,16 +971,42 @@ private fun SettingsPermissionsBody() {
             }
         }
 
-        // DND / Notification Policy Access
-        val nmPolicy = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-        if (Build.VERSION.SDK_INT >= 23 && !nmPolicy.isNotificationPolicyAccessGranted) {
+        // --- Display over other apps ---
+        val overlayOk = android.provider.Settings.canDrawOverlays(context)
+        SettingsPermissionRow(
+            t("Display over other apps", "在其他應用上層顯示"), overlayOk,
+            t("Lets the ringing screen pop up over whatever app is open.", "用第二個 app 時都可以彈出響鬧鐘畫面。")
+        )
+        if (!overlayOk) {
             Button(onClick = {
                 runCatching {
                     context.startActivity(
-                        Intent(android.provider.Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
+                        Intent(
+                            android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            android.net.Uri.parse("package:" + context.packageName)
+                        )
                     )
                 }
-            }, modifier = Modifier.fillMaxWidth()) { Text(t("Allow Do-Not-Disturb override", "允許勿擾模式繞過")) }
+            }, modifier = Modifier.fillMaxWidth()) { Text(t("Allow display over other apps", "允許在其他應用上層顯示")) }
+        }
+
+        // --- Battery optimization exemption ---
+        val battOk = pm.isIgnoringBatteryOptimizations(context.packageName)
+        SettingsPermissionRow(
+            t("Battery optimization exemption", "電池優化豁免"), battOk,
+            t("Strongly recommended — stops the system from delaying alarms.", "強烈建議開啟——防止系統延遲鬧鐘。")
+        )
+        if (!battOk) {
+            Button(onClick = {
+                runCatching {
+                    context.startActivity(
+                        Intent(
+                            android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                            android.net.Uri.parse("package:" + context.packageName)
+                        )
+                    )
+                }
+            }, modifier = Modifier.fillMaxWidth()) { Text(t("Exempt battery optimization", "豁免電池優化")) }
         }
     }
 }
