@@ -1,7 +1,6 @@
 package com.shiftalarm.app.core
 
 import android.Manifest
-import android.app.AlarmManager
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
@@ -53,7 +52,6 @@ fun PermissionGateScreen(onAllGranted: () -> Unit) {
 
     fun checkPermissions() {
         val missing = mutableListOf<String>()
-        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         // 1. 通知權限 (Android 13+) - needed for the full-screen alarm alert
@@ -64,8 +62,11 @@ fun PermissionGateScreen(onAllGranted: () -> Unit) {
             missing.add("notif")
         }
 
-        // 2. 鬧鐘和提醒 (Exact Alarm) - MOST IMPORTANT
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
+        // 2. 鬧鐘和提醒 (Exact Alarm) - MOST IMPORTANT.
+        // Checked via AppOps (the real special-access toggle) so it stays
+        // independent of the battery exemption below — both can be granted
+        // at the same time and neither hides the other.
+        if (!ExactAlarmPermission.isToggleGranted(context)) {
             missing.add("exact_alarm")
         }
 

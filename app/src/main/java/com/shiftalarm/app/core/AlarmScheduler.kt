@@ -40,23 +40,34 @@ object AlarmScheduler {
     fun schedule(context: Context, entry: AlarmEntry) {
         val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
+        // 1) setAlarmClock() is the SAME mechanism the stock Clock app uses:
+        //    highest alarm priority, fires through Doze and OEM battery
+        //    savers, and shows the alarm icon in the status bar so the user
+        //    can SEE the alarm is armed. On Android 14+ it is allowed when
+        //    the user granted "Alarms & reminders" OR the app is on the
+        //    battery-exemption allowlist.
+        try {
+            val info = AlarmManager.AlarmClockInfo(entry.triggerAt, pendingActivity(context, entry))
+            am.setAlarmClock(info, pending(context, entry))
+            return
+        } catch (e: SecurityException) {
+            Log.w(TAG, "setAlarmClock rejected, trying setExactAndAllowWhileIdle", e)
+        }
+
+        // 2) setExactAndAllowWhileIdle(): exact + Doze-capable, same permission
+        //    requirements on 14+.
         try {
             am.setExactAndAllowWhileIdle(
                 AlarmManager.RTC_WAKEUP, entry.triggerAt, pending(context, entry)
             )
             return
         } catch (e: SecurityException) {
-            Log.w(TAG, "Exact alarm rejected, trying setAlarmClock", e)
+            Log.w(TAG, "Exact alarm rejected, using inexact Doze fallback", e)
         }
 
-        try {
-            val info = AlarmManager.AlarmClockInfo(entry.triggerAt, pendingActivity(context, entry))
-            am.setAlarmClock(info, pending(context, entry))
-            return
-        } catch (e: SecurityException) {
-            Log.w(TAG, "setAlarmClock rejected, using inexact Doze fallback", e)
-        }
-
+        // 3) setAndAllowWhileIdle(): the ORIGINAL commit-58 fallback — no
+        //    permission needed, not exact but still wakes the device in
+        //    Doze. An alarm is NEVER silently dropped.
         runCatching {
             am.setAndAllowWhileIdle(
                 AlarmManager.RTC_WAKEUP, entry.triggerAt, pending(context, entry)
