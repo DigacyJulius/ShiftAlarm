@@ -50,7 +50,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.shiftalarm.app.core.L10n
+import com.shiftalarm.app.core.Monetization
 import com.shiftalarm.app.core.RuleEngine
+import com.shiftalarm.app.core.t
 import com.shiftalarm.app.data.AppData
 import com.shiftalarm.app.data.NormalAlarm
 import com.shiftalarm.app.data.ShiftConfig
@@ -92,31 +95,40 @@ fun ProfilesScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item {
-            Text("工作地點設定檔", fontSize = 22.sp, fontWeight = FontWeight.Bold)
             Text(
-                "事件標題含「地點關鍵字」→ 命中設定檔；再按標題嘅「更份代號」決定更種；標題含「休息日關鍵字」→ 唔排鬧鐘。",
+                t("Work Profiles", "工作地點設定檔"),
+                fontSize = 22.sp, fontWeight = FontWeight.Bold
+            )
+            Text(
+                t(
+                    "Event title contains the location keyword → profile matched; the shift code letter in the title picks the shift type; off-day keyword → no alarm.",
+                    "事件標題含「地點關鍵字」→ 命中設定檔；再按標題嘅「更份代號」決定更種；標題含「休息日關鍵字」→ 唔排鬧鐘。"
+                ),
                 fontSize = 13.sp
             )
         }
         if (data.profiles.isEmpty()) {
-            item { Text("（未有設定檔，撳下面新增）", fontSize = 14.sp) }
+            item { Text(t("(No profiles yet — tap below to add one)", "（未有設定檔，撳下面新增）"), fontSize = 14.sp) }
         }
         items(data.profiles) { p ->
             Card(Modifier.fillMaxWidth()) {
                 Column(
                     Modifier.fillMaxWidth().clickable { editing = p }.padding(16.dp)
                 ) {
-                    Text(p.name.ifEmpty { "（未命名）" }, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                     Text(
-                        "地點關鍵字：" + p.keywords.ifEmpty { "（未設）" } +
-                            "｜休息日：" + p.offKeyword.ifEmpty { "（無）" },
+                        p.name.ifEmpty { t("(Unnamed)", "（未命名）") },
+                        fontSize = 18.sp, fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        t("Keywords: ", "地點關鍵字：") + p.keywords.ifEmpty { t("(none)", "（未設）") } +
+                            t("｜Off: ", "｜休息日：") + p.offKeyword.ifEmpty { t("(none)", "（無）") },
                         fontSize = 13.sp
                     )
                     Spacer(Modifier.height(4.dp))
                     p.shifts.forEach { s ->
                         Text(
-                            s.name + "（" + s.keyword.ifEmpty { "無代號" } + "）" + s.wakeTime +
-                                " 起·後備 " + s.alarmCount + " 粒·每 " + s.intervalMin + " 分",
+                            s.name + "（" + s.keyword.ifEmpty { t("no code", "無代號") } + "）" + s.wakeTime +
+                                t(" wake·backup ", " 起·後備 ") + s.alarmCount + t("·every ", " 粒·每 ") + s.intervalMin + t(" min", " 分"),
                             fontSize = 13.sp
                         )
                     }
@@ -125,7 +137,7 @@ fun ProfilesScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
         }
         item {
             Button(onClick = { editing = WorkProfile() }, Modifier.fillMaxWidth()) {
-                Text("＋ 新增地點設定檔")
+                Text(t("＋ Add work profile", "＋ 新增地點設定檔"))
             }
         }
     }
@@ -147,13 +159,19 @@ fun ProfileEditScreen(
         Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        item { Text(if (isNew) "新增地點設定檔" else "編輯地點設定檔", fontSize = 20.sp, fontWeight = FontWeight.Bold) }
+        item {
+            Text(
+                if (isNew) t("Add work profile", "新增地點設定檔")
+                else t("Edit work profile", "編輯地點設定檔"),
+                fontSize = 20.sp, fontWeight = FontWeight.Bold
+            )
+        }
         item {
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("地點名稱（例：CMC）") }
+                label = { Text(t("Location name (e.g. CMC)", "地點名稱（例：CMC）")) }
             )
         }
         item {
@@ -161,7 +179,7 @@ fun ProfileEditScreen(
                 value = keywords,
                 onValueChange = { keywords = it },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("地點關鍵字（逗號分隔，比對事件地點＋標題，例：cmc）") }
+                label = { Text(t("Location keywords (comma-separated, matched against event location + title, e.g. cmc)", "地點關鍵字（逗號分隔，比對事件地點＋標題，例：cmc）")) }
             )
         }
         item {
@@ -169,10 +187,15 @@ fun ProfileEditScreen(
                 value = offKeyword,
                 onValueChange = { offKeyword = it },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("休息日關鍵字（標題含此字＝唔排鬧鐘，例：off）") }
+                label = { Text(t("Off-day keyword (title containing this = no alarm, e.g. off)", "休息日關鍵字（標題含此字＝唔排鬧鐘，例：off）")) }
             )
         }
-        item { Text("更種設定（各自代號＋起身時間）", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+        item {
+            Text(
+                t("Shift types (code + wake time each)", "更種設定（各自代號＋起身時間）"),
+                fontSize = 16.sp, fontWeight = FontWeight.Bold
+            )
+        }
         itemsIndexed(shifts) { idx, s ->
             ShiftEditor(
                 cfg = s,
@@ -186,21 +209,21 @@ fun ProfileEditScreen(
         }
         item {
             OutlinedButton(
-                onClick = { shifts = shifts + ShiftConfig(name = "新更種") },
+                onClick = { shifts = shifts + ShiftConfig(name = t("New shift", "新更種")) },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("＋ 新增更種")
+                Text(t("＋ Add shift type", "＋ 新增更種"))
             }
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(onClick = {
                     onDone(WorkProfile(initial.id, name, keywords, offKeyword, shifts))
-                }) { Text("儲存") }
-                OutlinedButton(onClick = { onDone(null) }) { Text("取消") }
+                }) { Text(t("Save", "儲存")) }
+                OutlinedButton(onClick = { onDone(null) }) { Text(t("Cancel", "取消")) }
                 if (!isNew) {
                     TextButton(onClick = onDelete) {
-                        Text("刪除", color = MaterialTheme.colorScheme.error)
+                        Text(t("Delete", "刪除"), color = MaterialTheme.colorScheme.error)
                     }
                 }
             }
@@ -218,26 +241,26 @@ fun ShiftEditor(cfg: ShiftConfig, onDelete: () -> Unit, onChange: (ShiftConfig) 
                 value = cfg.name,
                 onValueChange = { onChange(cfg.copy(name = it)) },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("更種名稱（例：早更）") }
+                label = { Text(t("Shift name (e.g. Early)", "更種名稱（例：早更）")) }
             )
             Spacer(Modifier.height(8.dp))
             OutlinedTextField(
                 value = cfg.keyword,
                 onValueChange = { onChange(cfg.copy(keyword = it)) },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("更份代號（事件標題含此字＝用呢個更，例：a）") }
+                label = { Text(t("Shift code (title containing this = this shift, e.g. a)", "更份代號（事件標題含此字＝用呢個更，例：a）")) }
             )
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("起身時間", Modifier.weight(1f))
+                Text(t("Wake time", "起身時間"), Modifier.weight(1f))
                 OutlinedButton(onClick = { showPicker = true }) { Text(cfg.wakeTime) }
             }
             Spacer(Modifier.height(8.dp))
-            Stepper("後備鬧鐘數（防貪睡）", cfg.alarmCount, 0, 9) { onChange(cfg.copy(alarmCount = it)) }
-            Stepper("後備間隔（分鐘）", cfg.intervalMin, 1, 30) { onChange(cfg.copy(intervalMin = it)) }
+            Stepper(t("Backup alarms (anti-snooze)", "後備鬧鐘數（防貪睡）"), cfg.alarmCount, 0, 9) { onChange(cfg.copy(alarmCount = it)) }
+            Stepper(t("Backup interval (minutes)", "後備間隔（分鐘）"), cfg.intervalMin, 1, 30) { onChange(cfg.copy(intervalMin = it)) }
             Spacer(Modifier.height(4.dp))
             TextButton(onClick = onDelete) {
-                Text("刪除此更", color = MaterialTheme.colorScheme.error)
+                Text(t("Delete this shift", "刪除此更"), color = MaterialTheme.colorScheme.error)
             }
         }
     }
@@ -250,10 +273,10 @@ fun ShiftEditor(cfg: ShiftConfig, onDelete: () -> Unit, onChange: (ShiftConfig) 
                 TextButton(onClick = {
                     onChange(cfg.copy(wakeTime = "%02d:%02d".format(state.hour, state.minute)))
                     showPicker = false
-                }) { Text("確定") }
+                }) { Text(t("OK", "確定")) }
             },
             dismissButton = {
-                TextButton(onClick = { showPicker = false }) { Text("取消") }
+                TextButton(onClick = { showPicker = false }) { Text(t("Cancel", "取消")) }
             },
             text = { TimePicker(state = state) }
         )
@@ -273,20 +296,31 @@ fun Stepper(label: String, value: Int, min: Int, max: Int, onChange: (Int) -> Un
 // ---------- 一般鬧鐘 ----------
 
 fun dayName(dow: Int): String {
-    val names = mapOf(
+    val zh = mapOf(
         Calendar.SUNDAY to "日", Calendar.MONDAY to "一", Calendar.TUESDAY to "二",
         Calendar.WEDNESDAY to "三", Calendar.THURSDAY to "四", Calendar.FRIDAY to "五",
         Calendar.SATURDAY to "六"
     )
-    return "週" + (names[dow] ?: "")
+    val en = mapOf(
+        Calendar.SUNDAY to "Sun", Calendar.MONDAY to "Mon", Calendar.TUESDAY to "Tue",
+        Calendar.WEDNESDAY to "Wed", Calendar.THURSDAY to "Thu", Calendar.FRIDAY to "Fri",
+        Calendar.SATURDAY to "Sat"
+    )
+    return if (L10n.lang == "zh") "週" + (zh[dow] ?: "") else (en[dow] ?: "")
 }
 
 @Composable
 fun NormalAlarmsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Unit) {
     var showAdd by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Text("一般鬧鐘", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        Text("獨立於更期嘅自訂鬧鐘，可設一次性或每週重複。", fontSize = 13.sp)
+        Text(t("Alarms", "一般鬧鐘"), fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text(
+            t(
+                "Custom alarms independent of the roster — one-off or weekly repeating.",
+                "獨立於更期嘅自訂鬧鐘，可設一次性或每週重複。"
+            ),
+            fontSize = 13.sp
+        )
         Spacer(Modifier.height(12.dp))
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(data.normalAlarms) { na ->
@@ -294,10 +328,10 @@ fun NormalAlarmsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) ->
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("%02d:%02d".format(na.hour, na.minute), fontSize = 26.sp, fontWeight = FontWeight.Bold)
-                            Text(na.label.ifEmpty { "鬧鐘" }, fontSize = 14.sp)
+                            Text(na.label.ifEmpty { t("Alarm", "鬧鐘") }, fontSize = 14.sp)
                             Text(
-                                if (na.days.isEmpty()) "一次性"
-                                else "重複：" + na.days.sortedBy { it }.map { dayName(it) }.joinToString("、"),
+                                if (na.days.isEmpty()) t("One-off", "一次性")
+                                else t("Repeat: ", "重複：") + na.days.sortedBy { it }.map { dayName(it) }.joinToString("、"),
                                 fontSize = 12.sp
                             )
                         }
@@ -313,14 +347,18 @@ fun NormalAlarmsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) ->
                                 d.copy(normalAlarms = d.normalAlarms.filterNot { it.id == na.id })
                             }
                         }) {
-                            Icon(Icons.Filled.Delete, "刪除", tint = MaterialTheme.colorScheme.error)
+                            Icon(
+                                Icons.Filled.Delete,
+                                t("Delete", "刪除"),
+                                tint = MaterialTheme.colorScheme.error
+                            )
                         }
                     }
                 }
             }
         }
         Spacer(Modifier.height(8.dp))
-        Button(onClick = { showAdd = true }, Modifier.fillMaxWidth()) { Text("＋ 新增鬧鐘") }
+        Button(onClick = { showAdd = true }, Modifier.fillMaxWidth()) { Text(t("＋ Add alarm", "＋ 新增鬧鐘")) }
     }
     if (showAdd) {
         AddNormalAlarmDialog { na ->
@@ -343,7 +381,7 @@ fun AddNormalAlarmDialog(onDone: (NormalAlarm?) -> Unit) {
     )
     AlertDialog(
         onDismissRequest = { onDone(null) },
-        title = { Text("新增一般鬧鐘") },
+        title = { Text(t("Add alarm", "新增一般鬧鐘")) },
         confirmButton = {
             TextButton(onClick = {
                 onDone(
@@ -355,10 +393,10 @@ fun AddNormalAlarmDialog(onDone: (NormalAlarm?) -> Unit) {
                         days = days
                     )
                 )
-            }) { Text("確定") }
+            }) { Text(t("OK", "確定")) }
         },
         dismissButton = {
-            TextButton(onClick = { onDone(null) }) { Text("取消") }
+            TextButton(onClick = { onDone(null) }) { Text(t("Cancel", "取消")) }
         },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
@@ -368,10 +406,16 @@ fun AddNormalAlarmDialog(onDone: (NormalAlarm?) -> Unit) {
                     value = label,
                     onValueChange = { label = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("標籤") }
+                    label = { Text(t("Label", "標籤")) }
                 )
                 Spacer(Modifier.height(8.dp))
-                Text("重複（唔揀＝一次性，可左右滑動看全部七日）", fontSize = 12.sp)
+                Text(
+                    t(
+                        "Repeat (none = one-off; scroll sideways for all 7 days)",
+                        "重複（唔揀＝一次性，可左右滑動看全部七日）"
+                    ),
+                    fontSize = 12.sp
+                )
                 Row(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -401,9 +445,14 @@ fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
     // Diagnostics now lives behind a button here instead of occupying a
     // bottom nav tab.
     var showDiagnostics by remember { mutableStateOf(false) }
+    var showTutorial by remember { mutableStateOf(false) }
+    if (showTutorial) {
+        TutorialScreen(onFinished = { showTutorial = false })
+        return
+    }
     if (showDiagnostics) {
         Column(Modifier.fillMaxSize()) {
-            TextButton(onClick = { showDiagnostics = false }) { Text("← 返回設定") }
+            TextButton(onClick = { showDiagnostics = false }) { Text(t("← Back to settings", "← 返回設定")) }
             DiagnosticsScreen(data, persistThenSync)
         }
         return
@@ -413,17 +462,40 @@ fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
     // Legacy entries without a recorded time are still shown.
     val deletedList = data.dismissedAlarmMeta.entries.toList()
         .filter { (data.dismissedAlarmTimes[it.key] ?: Long.MAX_VALUE) > now }
-    val deletedDateFmt = remember { SimpleDateFormat("M月d日 HH:mm", Locale.TRADITIONAL_CHINESE) }
+    val deletedDateFmt = remember(L10n.lang) { L10n.newShortDateFmt() }
 
     LazyColumn(
         Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        item { Text("設定", fontSize = 22.sp, fontWeight = FontWeight.Bold) }
+        item { Text(t("Settings", "設定"), fontSize = 22.sp, fontWeight = FontWeight.Bold) }
 
-        item { Text("外觀", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+        item { Text(t("Language", "語言"), fontSize = 16.sp, fontWeight = FontWeight.Bold) }
         item {
-            val options = listOf("system" to "跟隨系統", "light" to "淺色", "dark" to "深色")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("en" to "English", "zh" to "中文").forEach { (value, label) ->
+                    if (s.language == value) {
+                        Button(onClick = {
+                            L10n.lang = value
+                            persistThenSync { d -> d.copy(settings = d.settings.copy(language = value)) }
+                        }) { Text(label) }
+                    } else {
+                        OutlinedButton(onClick = {
+                            L10n.lang = value
+                            persistThenSync { d -> d.copy(settings = d.settings.copy(language = value)) }
+                        }) { Text(label) }
+                    }
+                }
+            }
+        }
+
+        item { Text(t("Appearance", "外觀"), fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+        item {
+            val options = listOf(
+                "system" to t("Follow system", "跟隨系統"),
+                "light" to t("Light", "淺色"),
+                "dark" to t("Dark", "深色")
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 options.forEach { (value, label) ->
                     if (s.darkMode == value) {
@@ -439,67 +511,87 @@ fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
             }
         }
 
-        item { Text("iCal 網址（更期來源）", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+        item {
+            Text(
+                t("iCal URL (roster source)", "iCal 網址（更期來源）"),
+                fontSize = 16.sp, fontWeight = FontWeight.Bold
+            )
+        }
         item {
             var icalUrl by remember(s.icalUrl) { mutableStateOf(s.icalUrl) }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    "貼上 Google Calendar 的「私人 iCal 網址」（齒輪設定 → 匯入和匯出／整合日曆 → 私人網址）。App 每小時自動抓取一次。若已在「診斷」入面匯入過 .ics 檔案，檔案優先。",
+                    t(
+                        "Paste your Google Calendar secret iCal address (Settings → Import & export → Secret address). The app fetches it every hour. An .ics file imported in Diagnostics takes priority.",
+                        "貼上 Google Calendar 的「私人 iCal 網址」（齒輪設定 → 匯入和匯出／整合日曆 → 私人網址）。App 每小時自動抓取一次。若已在「診斷」入面匯入過 .ics 檔案，檔案優先。"
+                    ),
                     fontSize = 12.sp
                 )
                 OutlinedTextField(
                     value = icalUrl,
                     onValueChange = { icalUrl = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("iCal 私人網址") }
+                    label = { Text(t("Secret iCal address", "iCal 私人網址")) }
                 )
                 Button(onClick = {
                     persistThenSync { d -> d.copy(settings = d.settings.copy(icalUrl = icalUrl.trim())) }
-                }) { Text("儲存並立即同步") }
+                }) { Text(t("Save & sync now", "儲存並立即同步")) }
             }
         }
 
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                IntField("貪睡間隔（分鐘）", s.snoozeMinutes) { v -> persistThenSync { d -> d.copy(settings = d.settings.copy(snoozeMinutes = v)) } }
-                IntField("預排日數（日，最少 7）", s.lookaheadDays) { v -> persistThenSync { d -> d.copy(settings = d.settings.copy(lookaheadDays = v.coerceAtLeast(7))) } }
+                IntField(t("Snooze interval (minutes)", "貪睡間隔（分鐘）"), s.snoozeMinutes) { v -> persistThenSync { d -> d.copy(settings = d.settings.copy(snoozeMinutes = v)) } }
+                IntField(t("Days to schedule (min 7)", "預排日數（日，最少 7）"), s.lookaheadDays) { v -> persistThenSync { d -> d.copy(settings = d.settings.copy(lookaheadDays = v.coerceAtLeast(7))) } }
             }
         }
 
-        item { Text("地區鬧鐘（旅遊用）", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+        item {
+            Text(
+                t("Region alarm (for travel)", "地區鬧鐘（旅遊用）"),
+                fontSize = 16.sp, fontWeight = FontWeight.Bold
+            )
+        }
         item {
             var showTzPicker by remember { mutableStateOf(false) }
-            val tzLabel = if (s.alarmTimezone.isBlank()) "跟隨裝置" else zoneLabel(s.alarmTimezone)
+            val tzLabel = if (s.alarmTimezone.isBlank()) t("Follow device", "跟隨裝置") else zoneLabel(s.alarmTimezone)
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    "一般鬧鐘會喺選定地區嘅當地時間響。例如揀咗香港，去到東京旅行，07:00 鬧鐘照樣喺香港時間 07:00 響。更期鬧鐘則跟裝置時區。",
+                    t(
+                        "Normal alarms ring at the selected region's local time. Pick Hong Kong and your 07:00 alarm still rings at 07:00 Hong Kong time while you're in Tokyo. Roster alarms follow the device timezone.",
+                        "一般鬧鐘會喺選定地區嘅當地時間響。例如揀咗香港，去到東京旅行，07:00 鬧鐘照樣喺香港時間 07:00 響。更期鬧鐘則跟裝置時區。"
+                    ),
                     fontSize = 12.sp
                 )
                 OutlinedButton(
                     onClick = { showTzPicker = true },
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("鬧鐘時區：" + tzLabel) }
+                ) { Text(t("Alarm timezone: ", "鬧鐘時區：") + tzLabel) }
             }
             if (showTzPicker) {
                 var tzQuery by remember { mutableStateOf("") }
-                val candidates = listOf("跟隨裝置" to "") +
-                    WORLD_CITIES.filter {
-                        it.first.contains(tzQuery) || it.second.contains(tzQuery, ignoreCase = true)
-                    }
+                val candidates =
+                    (listOf("" to t("Follow device", "跟隨裝置")) +
+                        WORLD_CITIES.map { it.zone to cityLabel(it) })
+                        .filter { (zone, label) ->
+                            zone.isEmpty() ||
+                                label.contains(tzQuery, ignoreCase = true) ||
+                                zone.contains(tzQuery, ignoreCase = true)
+                        }
                 AlertDialog(
                     onDismissRequest = { showTzPicker = false },
-                    title = { Text("揀鬧鐘時區") },
+                    title = { Text(t("Pick alarm timezone", "揀鬧鐘時區")) },
                     text = {
                         Column {
                             OutlinedTextField(
                                 value = tzQuery,
                                 onValueChange = { tzQuery = it },
                                 modifier = Modifier.fillMaxWidth(),
-                                label = { Text("搜尋城市") }
+                                label = { Text(t("Search city / country", "搜尋城市／國家")) }
                             )
                             Spacer(Modifier.height(8.dp))
-                            LazyColumn(Modifier.height(320.dp)) {
-                                items(candidates, key = { it.first + it.second }) { (label, zone) ->
+                            LazyColumn(Modifier.height(340.dp)) {
+                                items(candidates, key = { it.first + it.second }) { (zone, label) ->
                                     Text(
                                         label,
                                         fontSize = 15.sp,
@@ -518,57 +610,77 @@ fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
                         }
                     },
                     confirmButton = {
-                        TextButton(onClick = { showTzPicker = false }) { Text("關閉") }
+                        TextButton(onClick = { showTzPicker = false }) { Text(t("Close", "關閉")) }
                     }
                 )
             }
         }
 
-        item { Text("廣告", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
-        item {
-            if (s.adsRemoved) {
-                Text("✓ 已移除廣告，多謝支持！", fontSize = 14.sp)
-            } else {
-                var purchaseMsg by remember { mutableStateOf<String?>(null) }
-                var adUnit by remember(s.adUnitId) { mutableStateOf(s.adUnitId) }
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        "廣告條只會顯示喺頂部，唔會彈出全頁廣告。一次性購買即可永久移除廣告。",
-                        fontSize = 12.sp
-                    )
-                    Button(onClick = {
-                        val activity = context as? android.app.Activity
-                        if (activity == null) {
-                            purchaseMsg = "無法啟動購買流程"
-                            return@Button
-                        }
-                        com.shiftalarm.app.core.AdsBilling.purchase(activity) { ok, msg ->
-                            purchaseMsg = msg
-                            if (ok) persistThenSync { d ->
-                                d.copy(settings = d.settings.copy(adsRemoved = true))
+        // Monetization section — hidden while ads/purchases are disabled
+        // globally (Monetization.ENABLED = false keeps the code intact).
+        if (Monetization.ENABLED) {
+            item { Text(t("Ads", "廣告"), fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+            item {
+                if (s.adsRemoved) {
+                    Text(t("✓ Ads removed — thank you!", "✓ 已移除廣告，多謝支持！"), fontSize = 14.sp)
+                } else {
+                    var purchaseMsg by remember { mutableStateOf<String?>(null) }
+                    var adUnit by remember(s.adUnitId) { mutableStateOf(s.adUnitId) }
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            t(
+                                "The ad banner only shows at the top — never full-page. A one-time purchase removes it forever.",
+                                "廣告條只會顯示喺頂部，唔會彈出全頁廣告。一次性購買即可永久移除廣告。"
+                            ),
+                            fontSize = 12.sp
+                        )
+                        Button(onClick = {
+                            val activity = context as? android.app.Activity
+                            if (activity == null) {
+                                purchaseMsg = t("Cannot start purchase", "無法啟動購買流程")
+                                return@Button
                             }
-                        }
-                    }) { Text("移除廣告（一次性購買）") }
-                    purchaseMsg?.let { Text(it, fontSize = 12.sp) }
-                    OutlinedTextField(
-                        value = adUnit,
-                        onValueChange = { adUnit = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("AdMob 廣告單元 ID（選填，留空＝測試廣告）") }
-                    )
-                    OutlinedButton(onClick = {
-                        persistThenSync { d ->
-                            d.copy(settings = d.settings.copy(adUnitId = adUnit.trim()))
-                        }
-                    }) { Text("儲存廣告單元 ID") }
+                            com.shiftalarm.app.core.AdsBilling.purchase(activity) { ok, msg ->
+                                purchaseMsg = msg
+                                if (ok) persistThenSync { d ->
+                                    d.copy(settings = d.settings.copy(adsRemoved = true))
+                                }
+                            }
+                        }) { Text(t("Remove ads (one-time purchase)", "移除廣告（一次性購買）")) }
+                        purchaseMsg?.let { Text(it, fontSize = 12.sp) }
+                        OutlinedTextField(
+                            value = adUnit,
+                            onValueChange = { adUnit = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text(t("AdMob ad unit id (optional, blank = test ads)", "AdMob 廣告單元 ID（選填，留空＝測試廣告）")) }
+                        )
+                        OutlinedButton(onClick = {
+                            persistThenSync { d ->
+                                d.copy(settings = d.settings.copy(adUnitId = adUnit.trim()))
+                            }
+                        }) { Text(t("Save ad unit id", "儲存廣告單元 ID")) }
+                    }
                 }
             }
         }
 
-        item { Text("已刪除鬧鐘管理", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
-        item { Text("撳「還原」會即刻重新排嗰粒鬧鐘（如果時間仲未過）。每次刪除／解除只會影響嗰一粒鬧鐘，同日其他鬧鐘唔會受影響。過咗原定時間嘅已刪鬧鐘會自動從呢度消失。", fontSize = 12.sp) }
+        item {
+            Text(
+                t("Deleted alarms", "已刪除鬧鐘管理"),
+                fontSize = 16.sp, fontWeight = FontWeight.Bold
+            )
+        }
+        item {
+            Text(
+                t(
+                    "Tap Restore to re-schedule a deleted alarm immediately (if its time hasn't passed). Deleting/dismissing only affects that single alarm. Deleted alarms whose original time has passed disappear from this list automatically.",
+                    "撳「還原」會即刻重新排嗰粒鬧鐘（如果時間仲未過）。每次刪除／解除只會影響嗰一粒鬧鐘，同日其他鬧鐘唔會受影響。過咗原定時間嘅已刪鬧鐘會自動從呢度消失。"
+                ),
+                fontSize = 12.sp
+            )
+        }
         if (deletedList.isEmpty()) {
-            item { Text("暫時未有已刪除嘅更期鬧鐘。", fontSize = 12.sp) }
+            item { Text(t("No deleted roster alarms.", "暫時未有已刪除嘅更期鬧鐘。"), fontSize = 12.sp) }
         }
         items(deletedList) { entry ->
             Card(Modifier.fillMaxWidth()) {
@@ -589,7 +701,7 @@ fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
                                 dismissedAlarmTimes = d.dismissedAlarmTimes - entry.key
                             )
                         }
-                    }) { Text("還原") }
+                    }) { Text(t("Restore", "還原")) }
                 }
             }
         }
@@ -607,7 +719,7 @@ fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
                         }
                     },
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("還原全部已刪除嘅更期鬧鐘") }
+                ) { Text(t("Restore all deleted roster alarms", "還原全部已刪除嘅更期鬧鐘")) }
             }
         }
 
@@ -622,7 +734,7 @@ fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
                             )
                         )
                     }
-                }) { Text("豁免電池優化（強烈建議）") }
+                }) { Text(t("Exempt battery optimization (strongly recommended)", "豁免電池優化（強烈建議）")) }
 
                 val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
                 if (Build.VERSION.SDK_INT >= 31 && !am.canScheduleExactAlarms()) {
@@ -635,7 +747,7 @@ fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
                                 )
                             )
                         }
-                    }) { Text("允許精確鬧鐘") }
+                    }) { Text(t("Allow exact alarms", "允許精確鬧鐘")) }
                 }
 
                 if (Build.VERSION.SDK_INT >= 34) {
@@ -650,7 +762,7 @@ fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
                                     )
                                 )
                             }
-                        }) { Text("允許全螢幕鬧鐘通知") }
+                        }) { Text(t("Allow full-screen alarm notifications", "允許全螢幕鬧鐘通知")) }
                     }
                 }
 
@@ -663,17 +775,32 @@ fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
                                 Intent(android.provider.Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
                             )
                         }
-                    }) { Text("允許勿擾模式繞過") }
+                    }) { Text(t("Allow Do-Not-Disturb override", "允許勿擾模式繞過")) }
                 }
 
                 // Diagnostics moved here from the bottom nav bar.
                 OutlinedButton(
                     onClick = { showDiagnostics = true },
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("診斷／日曆同步資料") }
+                ) { Text(t("Diagnostics / calendar sync data", "診斷／日曆同步資料")) }
+
+                // In-app tutorial, reopenable anytime.
+                OutlinedButton(
+                    onClick = { showTutorial = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(t("Tutorial (how to use)", "教學（使用方法）")) }
             }
         }
-        item { Spacer(Modifier.height(16.dp)) }
+        item {
+            val version = runCatching {
+                context.packageManager.getPackageInfo(context.packageName, 0).versionName
+            }.getOrDefault("?")
+            Text(
+                t("Version ", "版本 ") + version,
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 

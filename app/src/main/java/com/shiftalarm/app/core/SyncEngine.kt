@@ -70,7 +70,7 @@ object SyncEngine {
                     try {
                         IcalSource.fetchEventsFromUrl(data.settings.icalUrl, from, to)
                     } catch (e: Exception) {
-                        errors += "iCal 抓取失敗：" + (e.message ?: e.toString())
+                        errors += t("iCal fetch failed: ", "iCal 抓取失敗：") + (e.message ?: e.toString())
                         readOk = false
                         emptyList()
                     }
@@ -101,9 +101,9 @@ object SyncEngine {
                 val keep = retainedWork.filter { w -> workEntries.none { it.id == w.id } }
                 workEntries += keep
                 errors += if (readOk)
-                    "iCal 讀到 0 個事件，保留原有 " + keep.size + " 粒工作鬧鐘"
+                    t("iCal read 0 events — kept ", "iCal 讀到 0 個事件，保留原有 ") + keep.size + t(" work alarms", " 粒工作鬧鐘")
                 else
-                    "網絡讀取失敗，保留原有 " + keep.size + " 粒工作鬧鐘"
+                    t("Network read failed — kept ", "網絡讀取失敗，保留原有 ") + keep.size + t(" work alarms", " 粒工作鬧鐘")
             }
         }
 
@@ -133,13 +133,13 @@ object SyncEngine {
                 if (na.days.isEmpty()) {
                     normalEntries += AlarmEntry(
                         baseId + d.coerceAtMost(9), na.id, t,
-                        na.label.ifEmpty { "一般鬧鐘" }, "normal"
+                        na.label.ifEmpty { t("Normal alarm", "一般鬧鐘") }, "normal"
                     )
                     break
                 } else if (na.days.contains(cal.get(Calendar.DAY_OF_WEEK))) {
                     normalEntries += AlarmEntry(
                         baseId + d.coerceAtMost(9), na.id, t,
-                        na.label.ifEmpty { "一般鬧鐘" }, "normal"
+                        na.label.ifEmpty { t("Normal alarm", "一般鬧鐘") }, "normal"
                     )
                 }
             }
@@ -154,9 +154,15 @@ object SyncEngine {
         for (e in all) AlarmScheduler.schedule(context, e)
 
         val logText = when {
-            errors.isNotEmpty() -> "失敗：" + errors.joinToString("；")
-            all.isEmpty() -> "排唔到鬧鐘（讀到 " + eventsRead + " 個事件、命中 " + matchedEvents + " 個更、休息日 " + offDays + "）"
-            else -> "排咗 " + all.size + " 粒鬧鐘（讀到 " + eventsRead + " 個事件、命中 " + matchedEvents + " 個更、休息日 " + offDays + "）"
+            errors.isNotEmpty() -> t("Failed: ", "失敗：") + errors.joinToString("；")
+            all.isEmpty() -> t(
+                "No alarms scheduled (read " + eventsRead + " events, matched " + matchedEvents + " shifts, " + offDays + " off days)",
+                "排唔到鬧鐘（讀到 " + eventsRead + " 個事件、命中 " + matchedEvents + " 個更、休息日 " + offDays + "）"
+            )
+            else -> t(
+                "Scheduled " + all.size + " alarms (read " + eventsRead + " events, matched " + matchedEvents + " shifts, " + offDays + " off days)",
+                "排咗 " + all.size + " 粒鬧鐘（讀到 " + eventsRead + " 個事件、命中 " + matchedEvents + " 個更、休息日 " + offDays + "）"
+            )
         }
         val newLogs = (listOf(SyncLog(System.currentTimeMillis(), logText)) + data.syncLogs).take(10)
 

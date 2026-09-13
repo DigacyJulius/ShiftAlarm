@@ -58,10 +58,10 @@ object CountdownNotificationManager {
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "即將鬧鐘",
+                t("Upcoming alarm", "即將鬧鐘"),
                 NotificationManager.IMPORTANCE_LOW
             )
-            channel.description = "提示即將響起的鬧鐘"
+            channel.description = t("Heads-up before an alarm rings", "提示即將響起的鬧鐘")
             nm.createNotificationChannel(channel)
         }
     }
@@ -74,6 +74,7 @@ object CountdownNotificationManager {
         updateJob?.cancel()
 
         val data = Store(c).data.first()
+        if (data.settings.language.isNotEmpty()) L10n.lang = data.settings.language
         val now = System.currentTimeMillis()
         val threshold = now + TimeUnit.MINUTES.toMillis(COUNTDOWN_THRESHOLD_MINUTES)
 
@@ -143,9 +144,9 @@ object CountdownNotificationManager {
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher)
-            .setContentTitle("鬧鐘即將響起")
-            .setContentText("${alarm.label} • $timeText (剩餘)")
-            .setSubText("為 $alarmTime 的鬧鐘備計")
+            .setContentTitle(t("Alarm ringing soon", "鬧鐘即將響起"))
+            .setContentText("${alarm.label} • $timeText" + t(" (left)", " (剩餘)"))
+            .setSubText(t("Heads-up for the ", "為 ") + alarmTime + t(" alarm", " 嘅鬧鐘備計"))
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setContentIntent(contentIntent)
             .setOngoing(true)

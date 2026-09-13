@@ -36,6 +36,7 @@ class AlarmForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        L10n.syncFromDisk(this)
         alarmId = intent?.getLongExtra(AlarmReceiver.EXTRA_ID, -1L) ?: -1L
         if (alarmId == -1L) {
             stopSelf()
@@ -54,8 +55,8 @@ class AlarmForegroundService : Service() {
         )
         val notif = NotificationCompat.Builder(this, AlarmRingingActivity.CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
-            .setContentTitle("鬧鐘響起")
-            .setContentText("點按查看")
+            .setContentTitle(t("Alarm", "鬧鐘響起"))
+            .setContentText(t("Tap to view", "點按查看"))
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setFullScreenIntent(fullPi, true)

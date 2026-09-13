@@ -60,6 +60,7 @@ class TimerReceiver : BroadcastReceiver() {
     }
 
     override fun onReceive(context: Context, intent: Intent) {
+        L10n.syncFromDisk(context)
         ensureChannel(context)
         val contentIntent = PendingIntent.getActivity(
             context, 0,
@@ -69,8 +70,8 @@ class TimerReceiver : BroadcastReceiver() {
         val sound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
-            .setContentTitle("計時結束")
-            .setContentText("叮！時間到喇。")
+            .setContentTitle(t("Timer done", "計時結束"))
+            .setContentText(t("Ding! Time's up.", "叮！時間到喇。"))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setSound(sound)
@@ -100,9 +101,9 @@ class TimerReceiver : BroadcastReceiver() {
     private fun ensureChannel(context: Context) {
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channel = NotificationChannel(
-            CHANNEL_ID, "計時結束", NotificationManager.IMPORTANCE_HIGH
+            CHANNEL_ID, t("Timer done", "計時結束"), NotificationManager.IMPORTANCE_HIGH
         )
-        channel.description = "計時器時間到嘅提示"
+        channel.description = t("Heads-up when the timer finishes", "計時器時間到嘅提示")
         channel.setSound(
             RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM),
             android.media.AudioAttributes.Builder()

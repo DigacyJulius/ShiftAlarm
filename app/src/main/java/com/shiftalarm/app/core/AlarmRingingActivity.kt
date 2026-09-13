@@ -178,10 +178,10 @@ fun RingingScreen(timeText: String, label: String, onSnooze: () -> Unit, onDismi
             Spacer(Modifier.height(64.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                 OutlinedButton(onClick = onSnooze) {
-                    Text("\u8caa\u7761", color = Color.White, fontSize = 18.sp)
+                    Text(t("Snooze", "貪睡"), color = Color.White, fontSize = 18.sp)
                 }
                 Button(onClick = onDismiss) {
-                    Text("\u89e3\u9664", fontSize = 18.sp)
+                    Text(t("Dismiss", "解除"), fontSize = 18.sp)
                 }
             }
         }

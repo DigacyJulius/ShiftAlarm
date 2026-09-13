@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.BugReport
@@ -41,10 +43,12 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -57,8 +61,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.shiftalarm.app.core.AlarmScheduler
 import com.shiftalarm.app.core.AlarmWatchdogWorker
 import com.shiftalarm.app.core.CountdownNotificationManager
+import com.shiftalarm.app.core.L10n
+import com.shiftalarm.app.core.Monetization
 import com.shiftalarm.app.core.PermissionGateScreen
 import com.shiftalarm.app.core.SyncEngine
+import com.shiftalarm.app.core.t
 import com.shiftalarm.app.data.AlarmEntry
 import com.shiftalarm.app.data.AppData
 import com.shiftalarm.app.data.Store
@@ -67,6 +74,7 @@ import com.shiftalarm.app.ui.NormalAlarmsScreen
 import com.shiftalarm.app.ui.ProfilesScreen
 import com.shiftalarm.app.ui.SettingsScreen
 import com.shiftalarm.app.ui.ToolsScreen
+import com.shiftalarm.app.ui.TutorialScreen
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -100,9 +108,12 @@ class MainActivity : ComponentActivity() {
         SyncEngine.schedulePeriodicSync(this)
 
         // Initialize AdMob off the main thread (Google recommends this).
-        Thread {
-            runCatching { com.google.android.gms.ads.MobileAds.initialize(this) }
-        }.start()
+        // Hidden behind the monetization switch while ads are disabled.
+        if (Monetization.ENABLED) {
+            Thread {
+                runCatching { com.google.android.gms.ads.MobileAds.initialize(this) }
+            }.start()
+        }
 
         // The old 24/7 standby foreground service is gone (user request:
         // no persistent notification). Its job is now done by a
@@ -152,8 +163,29 @@ fun AppRoot() {
     val store = remember { Store(context) }
     val scope = rememberCoroutineScope()
     val data by remember { store.data }.collectAsStateWithLifecycle(initialValue = AppData())
-    var tab by remember { mutableStateOf(0) }
+    var tab by remember { mutableIntStateOf(0) }
     var syncMessage by remember { mutableStateOf<String?>(null) }
+    var showTutorial by remember { mutableStateOf(false) }
+
+    // Sync the app language from stored settings, and show the tutorial on
+    // very first launch.
+    LaunchedEffect(data.settings.language) {
+        L10n.lang = data.settings.language.ifEmpty { "en" }
+    }
+    LaunchedEffect(data.settings.tutorialDone) {
+        if (!data.settings.tutorialDone) showTutorial = true
+    }
+
+    // Swipeable main pages with wrap-around: swiping past the last page
+    // lands on the first one and vice versa (infinite pager trick).
+    val pageCount = 5
+    val anchor = 5000 // divisible by pageCount
+    val pagerState = rememberPagerState(initialPage = anchor) { anchor * 2 }
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.currentPage }.collect { p ->
+            tab = ((p % pageCount) + pageCount) % pageCount
+        }
+    }
 
     val systemDark = isSystemInDarkTheme()
     val darkTheme = when (data.settings.darkMode) {
@@ -164,23 +196,42 @@ fun AppRoot() {
 
     fun doSync() {
         scope.launch {
-            syncMessage = "同步中…"
+            syncMessage = t("Syncing…", "同步中…")
             val r = SyncEngine.sync(context)
             syncMessage = when {
                 r.errors.isNotEmpty() ->
-                    "同步失敗：" + r.errors.joinToString("；")
+                    t("Sync failed: ", "同步失敗：") + r.errors.joinToString("；")
                 data.profiles.isEmpty() ->
-                    "同步完成，但排唔到任何鬧鐘：仲未有地點設定檔。去「地點設定檔」→ 新增（例：名稱 CMC、地點關鍵字 cmc），儲存後再撳同步。"
+                    t(
+                        "Synced, but no alarms scheduled: no work profiles yet. Go to Roster → add one (e.g. name CMC, keyword cmc), save, then sync again.",
+                        "同步完成，但排唔到任何鬧鐘：仲未有地點設定檔。去「更期」→ 新增（例：名稱 CMC、地點關鍵字 cmc），儲存後再撳同步。"
+                    )
                 data.settings.icalUrl.isBlank() && data.icalEvents.isEmpty() ->
-                    "同步完成，但未設定 iCal 網址或匯入檔案。去「設定」貼上 iCal 網址，或去「診斷」匯入 .ics 檔案。"
+                    t(
+                        "Synced, but no iCal URL or imported file set. Paste an iCal URL in Settings, or import an .ics file in Diagnostics.",
+                        "同步完成，但未設定 iCal 網址或匯入檔案。去「設定」貼上 iCal 網址，或去「診斷」匯入 .ics 檔案。"
+                    )
                 r.eventsRead == 0 ->
-                    "同步完成，但讀到 0 個事件。檢查：① iCal 網址有冇填對？② 更期係咪喺未來 " + maxOf(data.settings.lookaheadDays, 7) + " 日內？（去「診斷」分頁睇詳情）"
+                    t(
+                        "Synced, but 0 events read. Check: ① is the iCal URL correct? ② are the shifts within the next ",
+                        "同步完成，但讀到 0 個事件。檢查：① iCal 網址有冇填對？② 更期係咪喺未來 "
+                    ) + maxOf(data.settings.lookaheadDays, 7) +
+                        t(" days? (see Diagnostics for details)", " 日內？（去「診斷」睇詳情）")
                 r.matchedEvents == 0 && r.offDays == 0 ->
-                    "同步完成：讀到 " + r.eventsRead + " 個事件，但冇一個命中設定檔。檢查事件標題（例：cmc a）同設定檔嘅「地點關鍵字」係咪一致。（去「診斷」分頁睇事件標題）"
+                    t(
+                        "Synced: read " + r.eventsRead + " events but none matched a profile. Check that event titles (e.g. cmc a) match your profile keywords. (see Diagnostics for event titles)",
+                        "同步完成：讀到 " + r.eventsRead + " 個事件，但冇一個命中設定檔。檢查事件標題（例：cmc a）同設定檔嘅「地點關鍵字」係咪一致。（去「診斷」睇事件標題）"
+                    )
                 r.total == 0 ->
-                    "同步完成：命中 " + r.matchedEvents + " 個更、" + r.offDays + " 個休息日，但全部起身時間已過。"
+                    t(
+                        "Synced: matched " + r.matchedEvents + " shifts, " + r.offDays + " off days, but all wake-up times have passed.",
+                        "同步完成：命中 " + r.matchedEvents + " 個更、" + r.offDays + " 個休息日，但全部起身時間已過。"
+                    )
                 else ->
-                    "同步完成：命中 " + r.matchedEvents + " 個更、跳過 " + r.offDays + " 個休息日，共排 " + r.total + " 粒鬧鐘"
+                    t(
+                        "Synced: matched " + r.matchedEvents + " shifts, skipped " + r.offDays + " off days — scheduled " + r.total + " alarms",
+                        "同步完成：命中 " + r.matchedEvents + " 個更、跳過 " + r.offDays + " 個休息日，共排 " + r.total + " 粒鬧鐘"
+                    )
             }
         }
     }
@@ -241,46 +292,43 @@ fun AppRoot() {
         Scaffold(
             bottomBar = {
                 NavigationBar {
-                    NavigationBarItem(
-                        selected = tab == 0,
-                        onClick = { tab = 0 },
-                        icon = { Icon(Icons.Filled.Home, null) },
-                        label = { Text("首頁") }
+                    val labels = listOf(
+                        t("Home", "首頁") to Icons.Filled.Home,
+                        t("Roster", "更期") to Icons.Filled.Place,
+                        t("Alarms", "鬧鐘") to Icons.Filled.Alarm,
+                        t("Tools", "工具") to Icons.Filled.Schedule,
+                        t("Settings", "設定") to Icons.Filled.Settings
                     )
-                    NavigationBarItem(
-                        selected = tab == 1,
-                        onClick = { tab = 1 },
-                        icon = { Icon(Icons.Filled.Place, null) },
-                        label = { Text("地點設定檔") }
-                    )
-                    NavigationBarItem(
-                        selected = tab == 2,
-                        onClick = { tab = 2 },
-                        icon = { Icon(Icons.Filled.Alarm, null) },
-                        label = { Text("一般鬧鐘") }
-                    )
-                    NavigationBarItem(
-                        selected = tab == 3,
-                        onClick = { tab = 3 },
-                        icon = { Icon(Icons.Filled.Schedule, null) },
-                        label = { Text("工具") }
-                    )
-                    NavigationBarItem(
-                        selected = tab == 4,
-                        onClick = { tab = 4 },
-                        icon = { Icon(Icons.Filled.Settings, null) },
-                        label = { Text("設定") }
-                    )
+                    labels.forEachIndexed { i, (label, icon) ->
+                        NavigationBarItem(
+                            selected = tab == i,
+                            onClick = {
+                                // Shortest hop, wrapping around the ends.
+                                var d = (i - tab + pageCount) % pageCount
+                                if (d > pageCount / 2) d -= pageCount
+                                scope.launch {
+                                    pagerState.animateScrollToPage(pagerState.currentPage + d)
+                                }
+                            },
+                            icon = { Icon(icon, null) },
+                            label = { Text(label) }
+                        )
+                    }
                 }
             }
         ) { padding ->
             Column(Modifier.padding(padding)) {
-                // Top banner ad (hidden once the remove-ads purchase is made).
-                if (!data.settings.adsRemoved) {
+                // Top banner ad (hidden once the remove-ads purchase is made,
+                // and while monetization is globally disabled).
+                if (Monetization.ENABLED && !data.settings.adsRemoved) {
                     AdBanner(adUnitId = data.settings.adUnitId)
                 }
-                Box(Modifier.weight(1f)) {
-                    when (tab) {
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.weight(1f),
+                    beyondViewportPageCount = 1
+                ) { page ->
+                    when (((page % pageCount) + pageCount) % pageCount) {
                         0 -> HomeScreen(
                             data = data,
                             syncMessage = syncMessage,
@@ -296,6 +344,15 @@ fun AppRoot() {
                 }
             }
         }
+    }
+
+    if (showTutorial) {
+        TutorialScreen(onFinished = {
+            showTutorial = false
+            persistThenSync { d ->
+                d.copy(settings = d.settings.copy(tutorialDone = true))
+            }
+        })
     }
 }
 
@@ -322,7 +379,7 @@ suspend fun scheduleTestAlarm(context: Context, store: Store) {
         id = 260_000_000L,
         groupId = 0L,
         triggerAt = System.currentTimeMillis() + 15_000L,
-        label = "測試鬧鐘",
+        label = t("Test alarm", "測試鬧鐘"),
         kind = "test"
     )
     val oldTests = data.scheduled.filter { it.kind == "test" }
@@ -337,7 +394,11 @@ fun relative(from: Long, to: Long): String {
     val diff = (to - from) / 60000L
     val h = diff / 60
     val m = diff % 60
-    return if (h > 0) "${h} 小時 ${m} 分鐘" else "${m} 分鐘"
+    return if (L10n.lang == "zh") {
+        if (h > 0) "${h} 小時 ${m} 分鐘" else "${m} 分鐘"
+    } else {
+        if (h > 0) "${h}h ${m}m" else "${m}m"
+    }
 }
 
 @Composable
@@ -351,7 +412,12 @@ fun HomeScreen(
     val now = System.currentTimeMillis()
     val upcoming = data.scheduled.filter { it.triggerAt > now }.sortedBy { it.triggerAt }
     val next = upcoming.firstOrNull()
-    val dayFmt = remember { SimpleDateFormat("M月d日 (E)", Locale.TRADITIONAL_CHINESE) }
+    val dayFmt = remember(L10n.lang) {
+        SimpleDateFormat(
+            if (L10n.lang == "zh") "M月d日 (E)" else "EEE, MMM d",
+            L10n.locale
+        )
+    }
     val timeFmt = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
     val byDay = upcoming.groupBy { dayFmt.format(Date(it.triggerAt)) }
 
@@ -362,22 +428,33 @@ fun HomeScreen(
         item {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(20.dp)) {
-                    Text("下一個鬧鐘", fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
+                    Text(
+                        t("Next alarm", "下一個鬧鐘"),
+                        fontSize = 14.sp, color = MaterialTheme.colorScheme.primary
+                    )
                     if (next != null) {
                         Text(timeFmt.format(Date(next.triggerAt)), fontSize = 54.sp, fontWeight = FontWeight.Bold)
                         Text(next.label, fontSize = 16.sp)
-                        Text("將於 " + relative(now, next.triggerAt) + " 後響起", fontSize = 13.sp)
+                        Text(
+                            t("Rings in ", "將於 ") + relative(now, next.triggerAt) + t(" from now", " 後響起"),
+                            fontSize = 13.sp
+                        )
                     } else {
                         Spacer(Modifier.height(8.dp))
-                        Text("暫時未有排程鬧鐘。\n\n設定「地點設定檔」或「一般鬧鐘」之後，呢度會顯示下一個鬧鐘。")
+                        Text(
+                            t(
+                                "No alarms scheduled yet.\n\nSet up a work profile or a normal alarm and the next alarm will appear here.",
+                                "暫時未有排程鬧鐘。\n\n設定「地點設定檔」或「一般鬧鐘」之後，呢度會顯示下一個鬧鐘。"
+                            )
+                        )
                     }
                 }
             }
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(onClick = onSync) { Text("立即同步") }
-                OutlinedButton(onClick = onTest) { Text("測試鬧鐘（15秒後）") }
+                Button(onClick = onSync) { Text(t("Sync now", "立即同步")) }
+                OutlinedButton(onClick = onTest) { Text(t("Test alarm (15s)", "測試鬧鐘（15秒後）")) }
             }
         }
         if (syncMessage != null) {
@@ -407,7 +484,11 @@ fun HomeScreen(
                             Text(e.label, fontSize = 15.sp)
                         }
                         IconButton(onClick = { onDelete(e) }) {
-                            Icon(Icons.Filled.Delete, "刪除鬧鐘", tint = MaterialTheme.colorScheme.error)
+                            Icon(
+                                Icons.Filled.Delete,
+                                t("Delete alarm", "刪除鬧鐘"),
+                                tint = MaterialTheme.colorScheme.error
+                            )
                         }
                     }
                 }

@@ -36,6 +36,8 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.shiftalarm.app.calendar.EventPreview
 import com.shiftalarm.app.calendar.IcalSource
+import com.shiftalarm.app.core.L10n
+import com.shiftalarm.app.core.t
 import com.shiftalarm.app.data.AppData
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -64,20 +66,25 @@ fun DiagnosticsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> 
                         IcalSource.parseFromUri(context, uri)
                     }
                     if (evs.isEmpty()) {
-                        importStatus = "匯入成功，但檔案入面搵唔到任何事件"
+                        importStatus = t("Imported, but no events found in the file", "匯入成功，但檔案入面搵唔到任何事件")
                     } else {
-                        importStatus = "✓ 已匯入 " + evs.size + " 個事件（任何日期），即刻用嚟排鬧鐘"
+                        importStatus = t("✓ Imported ", "✓ 已匯入 ") + evs.size + t(" events (any date) — used for alarms right away", " 個事件（任何日期），即刻用嚟排鬧鐘")
                         persistThenSync { d -> d.copy(icalEvents = evs) }
                     }
                 } catch (e: Exception) {
-                    importStatus = "✗ 匯入失敗：" + (e.message ?: e.toString())
+                    importStatus = t("✗ Import failed: ", "✗ 匯入失敗：") + (e.message ?: e.toString())
                 }
             }
         }
     }
 
     val timeFmt = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
-    val dayFmt = remember { SimpleDateFormat("M月d日 (E)", Locale.TRADITIONAL_CHINESE) }
+    val dayFmt = remember(L10n.lang) {
+        SimpleDateFormat(if (L10n.lang == "zh") "M月d日 (E)" else "EEE, MMM d", L10n.locale)
+    }
+    val shortDayFmt = remember(L10n.lang) {
+        SimpleDateFormat(if (L10n.lang == "zh") "M月d日" else "MMM d", L10n.locale)
+    }
     val logTimeFmt = remember { SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()) }
     val nowMs = System.currentTimeMillis()
     val from = nowMs - 12L * 3600_000L
@@ -94,10 +101,10 @@ fun DiagnosticsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> 
                 val evs = withContext(Dispatchers.IO) {
                     IcalSource.fetchEventsFromUrl(data.settings.icalUrl, from, to)
                 }.sortedBy { it.begin }
-                icalStatus = "✓ iCal 網址抓取成功：窗口內 " + evs.size + " 個事件"
+                icalStatus = t("✓ iCal fetch OK: ", "✓ iCal 網址抓取成功：窗口內 ") + evs.size + t(" events in window", " 個事件")
                 previews = evs.take(200).map { EventPreview(it.title, it.begin, it.calendarId) }
             } catch (e: Exception) {
-                icalStatus = "✗ iCal 網址抓取失敗：" + (e.message ?: e.toString())
+                icalStatus = t("✗ iCal fetch failed: ", "✗ iCal 網址抓取失敗：") + (e.message ?: e.toString())
             }
         }
         loading = false
@@ -109,18 +116,19 @@ fun DiagnosticsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> 
         Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        item { Text("診斷 / 日程", fontSize = 22.sp, fontWeight = FontWeight.Bold) }
-        item { Text("顯示 App 實際讀到嘅 iCal 數據——呢度有嘅嘢，先會被用嚟排鬧鐘。", fontSize = 13.sp) }
+        item { Text(t("Diagnostics / Schedule", "診斷 / 日程"), fontSize = 22.sp, fontWeight = FontWeight.Bold) }
+        item { Text(t("Shows the iCal data the app actually reads — only what appears here is used to schedule alarms.", "顯示 App 實際讀到嘅 iCal 數據——呢度有嘅嘢，先會被用嚟排鬧鐘。"), fontSize = 13.sp) }
 
         item {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
-                    Text("通知權限", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text(t("Notification permission", "通知權限"), fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     val hasNotif = Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(
                         context, Manifest.permission.POST_NOTIFICATIONS
                     ) == PackageManager.PERMISSION_GRANTED
                     Text(
-                        if (hasNotif) "✓ 通知權限已授予" else "✗ 通知權限未授予（鬧鐘響鈴可能唔會顯示）",
+                        if (hasNotif) t("✓ Notification permission granted", "✓ 通知權限已授予")
+                        else t("✗ Notification permission not granted (alarm ringing may not show)", "✗ 通知權限未授予（鬧鐘響鈴可能唔會顯示）"),
                         fontSize = 13.sp,
                         color = if (hasNotif) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                     )
@@ -131,46 +139,48 @@ fun DiagnosticsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> 
         item {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
-                    Text("iCal / 匯入", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text(t("iCal / Import", "iCal / 匯入"), fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     val source = when {
                         data.icalEvents.isNotEmpty() -> {
-                            val fmt = SimpleDateFormat("M月d日", Locale.TRADITIONAL_CHINESE)
                             val min = data.icalEvents.minOfOrNull { it.begin }
                             val max = data.icalEvents.maxOfOrNull { it.begin }
                             val range = if (min != null && max != null) {
-                                "（涵蓋 " + fmt.format(Date(min)) + " → " + fmt.format(Date(max)) + "）"
+                                t(" (covers ", "（涵蓋 ") + shortDayFmt.format(Date(min)) + " → " + shortDayFmt.format(Date(max)) + t(")", "）")
                             } else ""
-                            "現時來源：已匯入嘅 .ics 檔案（" + data.icalEvents.size + " 個事件）" + range
+                            t("Current source: imported .ics file (", "現時來源：已匯入嘅 .ics 檔案（") + data.icalEvents.size + t(" events)", " 個事件）") + range
                         }
-                        data.settings.icalUrl.isNotBlank() -> "現時來源：iCal 網址"
-                        else -> "現時來源：（未設定，去「設定」貼上 iCal 網址或匯入檔案）"
+                        data.settings.icalUrl.isNotBlank() -> t("Current source: iCal URL", "現時來源：iCal 網址")
+                        else -> t("Current source: (none — paste an iCal URL in Settings or import a file here)", "現時來源：（未設定，去「設定」貼上 iCal 網址或匯入檔案）")
                     }
                     Text(source, fontSize = 13.sp)
                     Spacer(Modifier.height(8.dp))
                     Button(onClick = {
                         filePicker.launch(arrayOf("text/calendar", "application/ics", "application/octet-stream", "*/*"))
-                    }) { Text("📂 匯入 .ics 檔案") }
+                    }) { Text(t("📂 Import .ics file", "📂 匯入 .ics 檔案")) }
                     if (data.icalEvents.isNotEmpty()) {
                         Spacer(Modifier.height(4.dp))
                         OutlinedButton(onClick = {
-                            importStatus = "已清除匯入資料，改用 iCal 網址（如有設定）"
+                            importStatus = t("Imported data cleared — using iCal URL (if set)", "已清除匯入資料，改用 iCal 網址（如有設定）")
                             persistThenSync { d -> d.copy(icalEvents = emptyList()) }
-                        }) { Text("清除匯入資料") }
+                        }) { Text(t("Clear imported data", "清除匯入資料")) }
                     }
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         value = icalUrl,
                         onValueChange = { icalUrl = it },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("iCal 私人網址") }
+                        label = { Text(t("Secret iCal address", "iCal 私人網址")) }
                     )
                     Spacer(Modifier.height(4.dp))
                     OutlinedButton(onClick = {
                         persistThenSync { d -> d.copy(settings = d.settings.copy(icalUrl = icalUrl.trim())) }
-                    }) { Text("儲存 iCal 網址並同步") }
+                    }) { Text(t("Save iCal URL & sync", "儲存 iCal 網址並同步")) }
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "匯入用檔案：Google Calendar 網頁版 → 齒輪設定 → 匯入和匯出 → 匯出 → 下載 .ics → 傳去手機。匯入咗嘅更期優先過 iCal 網址。",
+                        t(
+                            "For import files: Google Calendar web → Settings → Import & export → Export → download .ics → copy to phone. An imported file takes priority over the iCal URL.",
+                            "匯入用檔案：Google Calendar 網頁版 → 齒輪設定 → 匯入和匯出 → 匯出 → 下載 .ics → 傳去手機。匯入咗嘅更期優先過 iCal 網址。"
+                        ),
                         fontSize = 12.sp
                     )
                     icalStatus?.let {
@@ -187,20 +197,22 @@ fun DiagnosticsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> 
 
         item { Spacer(Modifier.height(6.dp)) }
         item {
-            val fmt = SimpleDateFormat("M月d日", Locale.TRADITIONAL_CHINESE)
             Text(
-                "日程預覽（按日分組）・抓取視窗：" + fmt.format(Date(from)) + " → " + fmt.format(Date(to)),
+                t("Schedule preview (grouped by day)・fetch window: ", "日程預覽（按日分組）・抓取視窗：") + shortDayFmt.format(Date(from)) + " → " + shortDayFmt.format(Date(to)),
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold
             )
         }
         if (loading) {
-            item { Text("載入中…", fontSize = 13.sp) }
+            item { Text(t("Loading…", "載入中…"), fontSize = 13.sp) }
         }
         if (previews.isEmpty() && !loading) {
             item {
                 Text(
-                    "未有任何事件——請喺「設定」貼上 iCal 網址，或喺呢度匯入 .ics 檔案。",
+                    t(
+                        "No events — paste an iCal URL in Settings, or import an .ics file here.",
+                        "未有任何事件——請喺「設定」貼上 iCal 網址，或喺呢度匯入 .ics 檔案。"
+                    ),
                     fontSize = 13.sp, color = MaterialTheme.colorScheme.error
                 )
             }
@@ -215,7 +227,7 @@ fun DiagnosticsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> 
                     Column(Modifier.padding(12.dp)) {
                         Row(Modifier.fillMaxWidth()) {
                             Text(
-                                ev.title.ifEmpty { "（無標題）" },
+                                ev.title.ifEmpty { t("(no title)", "（無標題）") },
                                 fontSize = 15.sp,
                                 modifier = Modifier.weight(1f)
                             )
@@ -227,9 +239,9 @@ fun DiagnosticsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> 
         }
 
         item { Spacer(Modifier.height(6.dp)) }
-        item { Text("同步記錄（最近 10 次）", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+        item { Text(t("Sync log (last 10)", "同步記錄（最近 10 次）"), fontSize = 16.sp, fontWeight = FontWeight.Bold) }
         if (data.syncLogs.isEmpty()) {
-            item { Text("（暫無記錄——返首頁撳一次「立即同步」）", fontSize = 13.sp) }
+            item { Text(t("(No logs yet — tap “Sync now” on the Home page)", "（暫無記錄——返首頁撳一次「立即同步」）"), fontSize = 13.sp) }
         }
         items(data.syncLogs) { log ->
             Card(Modifier.fillMaxWidth()) {

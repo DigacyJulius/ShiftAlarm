@@ -57,6 +57,9 @@ data class AppSettings(
     // Empty = follow the device timezone. When set (e.g. "Asia/Hong_Kong"),
     // normal alarms fire at that region's local time — useful when travelling.
     val alarmTimezone: String = "",
+    // "en" (default) or "zh"
+    val language: String = "en",
+    val tutorialDone: Boolean = false,
     val adsRemoved: Boolean = false,
     val adUnitId: String = ""
 )
