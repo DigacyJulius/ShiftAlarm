@@ -348,6 +348,41 @@ fun AppRoot() {
         }
     }
 
+    /**
+     * Bulk delete for the Home multi-select: ONE read + ONE save. Calling
+     * deleteAlarm() in a loop races (each call reads the data before the
+     * previous save lands), so only the last deletion survived.
+     */
+    fun deleteAlarms(entries: List<AlarmEntry>) {
+        if (entries.isEmpty()) return
+        scope.launch {
+            val current = store.data.first()
+            val workIds = entries.filter { it.kind != "normal" }.map { it.id }.toSet()
+            val normalGroupIds = entries.filter { it.kind == "normal" }.map { it.groupId }.toSet()
+            // Cancel every affected alarm with the system scheduler in one pass.
+            current.scheduled
+                .filter { it.id in workIds || (it.kind == "normal" && it.groupId in normalGroupIds) }
+                .forEach { AlarmScheduler.cancel(context, it) }
+            val removedNormalIds = current.scheduled
+                .filter { it.kind == "normal" && it.groupId in normalGroupIds }
+                .map { it.id }
+            val removedIds = workIds + removedNormalIds
+            val kept = current.scheduled.filterNot { it.id in removedIds }
+            store.save(
+                current.copy(
+                    scheduled = kept,
+                    dismissedAlarmIds = current.dismissedAlarmIds + removedIds,
+                    dismissedAlarmMeta = current.dismissedAlarmMeta +
+                        entries.filter { it.kind != "normal" }.associate { it.id to it.label },
+                    dismissedAlarmTimes = current.dismissedAlarmTimes +
+                        entries.filter { it.kind != "normal" }.associate { it.id to it.triggerAt },
+                    normalAlarms = current.normalAlarms.filterNot { it.id in normalGroupIds }
+                )
+            )
+            runCatching { CountdownNotificationManager.checkAndShowCountdown(context) }
+        }
+    }
+
     MaterialTheme(colorScheme = if (darkTheme) DarkColors else LightColors) {
         Scaffold(
             bottomBar = {
@@ -421,7 +456,7 @@ fun AppRoot() {
                             syncMessage = syncMessage,
                             onSync = { doSync() },
                             onTest = { scope.launch { scheduleTestAlarm(context, store) } },
-                            onDelete = { e -> deleteAlarm(e) }
+                            onDeleteMany = { list -> deleteAlarms(list) }
                         )
                         m in 1..4 -> {
                             when (m - 1) {
@@ -506,7 +541,7 @@ fun HomeScreen(
     syncMessage: String?,
     onSync: () -> Unit,
     onTest: () -> Unit,
-    onDelete: (AlarmEntry) -> Unit
+    onDeleteMany: (List<AlarmEntry>) -> Unit
 ) {
     val now = System.currentTimeMillis()
     val upcoming = data.scheduled.filter { it.triggerAt > now }.sortedBy { it.triggerAt }
@@ -551,7 +586,7 @@ fun HomeScreen(
                         }) { Text(t("Cancel", "取消")) }
                         Button(
                             onClick = {
-                                upcoming.filter { it.id in selected }.forEach { onDelete(it) }
+                                onDeleteMany(upcoming.filter { it.id in selected })
                                 selectionMode = false
                                 selected = emptySet()
                             },

@@ -101,6 +101,14 @@ object SyncEngine {
             for (ev in events) {
                 val profile = RuleEngine.matchProfile(ev, data.profiles) ?: continue
                 if (dismissed.containsKey(ev.instanceId)) continue
+                // A manual entry on the in-app Calendar page for the same day
+                // + profile OVERRIDES the synced event — once the user edits
+                // that day, the calendar page is the source of truth.
+                val evDate = java.time.Instant.ofEpochMilli(ev.begin)
+                    .atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString()
+                if (data.manualShifts.any { it.date == evDate && it.profileId == profile.id }) {
+                    continue
+                }
                 if (RuleEngine.isOffDay(ev, profile)) {
                     offDays++
                     continue

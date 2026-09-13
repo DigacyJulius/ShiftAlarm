@@ -36,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -55,6 +56,8 @@ import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.text.SimpleDateFormat
+import java.util.Date
 
 /**
  * In-app shift calendar: for users without a calendar app, tap any day and
@@ -212,6 +215,7 @@ fun CalendarScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
                             Modifier
                                 .weight(1f)
                                 .aspectRatio(1f)
+                                .clip(CircleShape)
                                 .background(
                                     when (date) {
                                         selected -> MaterialTheme.colorScheme.primaryContainer
@@ -232,9 +236,9 @@ fun CalendarScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
                                     fontSize = 14.sp,
                                     fontWeight = if (date == today) FontWeight.Bold else FontWeight.Normal
                                 )
-                                entries.take(3).forEach { e ->
+                                entries.take(2).forEach { e ->
                                     Text(
-                                        e.code, fontSize = 9.sp, maxLines = 1,
+                                        e.code.take(5), fontSize = 9.sp, maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                         color = if (e.manual) MaterialTheme.colorScheme.primary
                                         else MaterialTheme.colorScheme.tertiary
@@ -270,17 +274,67 @@ fun CalendarScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
                 )
             },
             text = {
+                val timeFmt = SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+                val dayStart = date.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                val dayEnd = date.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                val dayEvents = syncedEvents.filter { it.begin >= dayStart && it.begin < dayEnd }
                 if (data.profiles.isEmpty()) {
-                    Text(
-                        t(
-                            "No work profiles yet. Create one on the Profile page first (e.g. name CMC), then pick shifts here.",
-                            "仲未有地點設定檔。先去「設定檔」新增（例：名稱 CMC），再返嚟揀更份。"
+                    Column {
+                        Text(
+                            t(
+                                "No work profiles yet. Create one on the Profile page first (e.g. name CMC), then pick shifts here.",
+                                "仲未有地點設定檔。先去「設定檔」新增（例：名稱 CMC），再返嚟揀更份。"
+                            )
                         )
-                    )
+                        if (dayEvents.isNotEmpty()) {
+                            Text(
+                                t("Events on this day (from your synced source):", "呢日嘅事件（來自同步來源）："),
+                                fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                            )
+                            dayEvents.forEach { ev ->
+                                Text(
+                                    timeFmt.format(Date(ev.begin)) +
+                                        (if (ev.end > ev.begin) "–" + timeFmt.format(Date(ev.end)) else "") +
+                                        "  " + ev.title,
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.tertiary
+                                )
+                            }
+                        }
+                    }
                 } else {
                     Column(Modifier.verticalScroll(rememberScrollState())) {
                         data.profiles.forEach { profile ->
                             val entry = entryFor(date, profile.id)
+                            // What the synced source says for this profile on this date.
+                            val synced = dayEvents.firstOrNull {
+                                RuleEngine.matchProfile(it, data.profiles)?.id == profile.id
+                            }
+                            if (synced != null) {
+                                if (RuleEngine.isOffDay(synced, profile)) {
+                                    Text(
+                                        t("Synced: off day", "同步：休息日"),
+                                        fontSize = 12.sp, color = MaterialTheme.colorScheme.tertiary
+                                    )
+                                } else {
+                                    val cfg = RuleEngine.pickShift(synced, profile, data.settings)
+                                    Text(
+                                        t("Synced: ", "同步：") +
+                                            (cfg?.name ?: t("(no shift matched)", "（未配對到更）")) +
+                                            " " + timeFmt.format(Date(synced.begin)) +
+                                            (if (synced.end > synced.begin) "–" + timeFmt.format(Date(synced.end)) else ""),
+                                        fontSize = 12.sp, color = MaterialTheme.colorScheme.tertiary
+                                    )
+                                }
+                                Text(
+                                    if (entry != null) t("→ overridden by your manual setting below", "→ 已被下面嘅手動設定覆蓋")
+                                    else t("→ pick a shift below to override the synced one", "→ 揀下面嘅更即可覆蓋同步嗰個"),
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(bottom = 2.dp)
+                                )
+                            }
                             Text(
                                 profile.name.ifBlank { t("(profile)", "（設定檔）") },
                                 fontSize = 14.sp,
