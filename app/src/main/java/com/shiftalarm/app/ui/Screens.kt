@@ -881,22 +881,21 @@ private fun SettingsPermissionsBody() {
         )
 
         // --- Alarms & reminders (exact alarms) ---
-        // On Android 13+ the app carries the built-in alarm-clock permission
-        // (USE_EXACT_ALARM): auto-granted at install and irrevocable, so the
-        // app NEVER asks — it already has it, and Android hides it from the
-        // special-access list. That is why this row should read OK.
+        // Uses the "Alarms & reminders" special permission: the app asks for
+        // it on startup and via the permission gate, and the system shows it
+        // in Settings > Apps > Special app access > Alarms & reminders.
         val exactOk = Build.VERSION.SDK_INT < 31 || am.canScheduleExactAlarms()
         val exactDetail = when {
-            Build.VERSION.SDK_INT >= 33 -> t(
-                "Built into the app on Android 13+: always granted and cannot be revoked, so the app never needs to ask.",
-                "Android 13+ 起內建於 app：自動授予、無法撤銷，所以唔會彈出權限要求，屬正常。"
+            Build.VERSION.SDK_INT < 31 ->
+                t("Not required on this Android version.", "呢個 Android 版本唔需要此權限。")
+            exactOk -> t(
+                "Granted via the \"Alarms & reminders\" special permission — alarms ring exactly on time.",
+                "已透過「鬧鐘和提醒」特殊權限授予——鬧鐘會準時響。"
             )
-            Build.VERSION.SDK_INT >= 31 -> if (exactOk) {
-                t("Granted via the \"Alarms & reminders\" special permission.", "已透過「鬧鐘和提醒」特殊權限授予。")
-            } else {
-                t("Required so alarms ring exactly on time.", "必須開啟，鬧鐘先可以準時響。")
-            }
-            else -> t("Not required on this Android version.", "呢個 Android 版本唔需要此權限。")
+            else -> t(
+                "Required so alarms ring exactly. The app asks for it on startup; you can also tap the button below.",
+                "必須開啟，鬧鐘先可以準時響。App 啟動時會自動要求，亦可以撳下面按鈕。"
+            )
         }
         SettingsPermissionRow(
             t("Alarms & reminders (exact alarms)", "鬧鐘和提醒（精確鬧鐘）"),

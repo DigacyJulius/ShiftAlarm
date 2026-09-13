@@ -2,6 +2,8 @@ package com.shiftalarm.app
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -113,6 +115,24 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         SyncEngine.schedulePeriodicSync(this)
+
+        // === 強制要求「鬧鐘和提醒」權限（最重要！）===
+        // Same as the original working versions: on every cold start, if the
+        // "Alarms & reminders" special permission is not granted, open the
+        // system screen directly so the user is asked immediately.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val am = getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+            if (!am.canScheduleExactAlarms()) {
+                runCatching {
+                    startActivity(
+                        Intent(
+                            android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                            Uri.parse("package:$packageName")
+                        )
+                    )
+                }
+            }
+        }
 
         // Initialize AdMob off the main thread (Google recommends this).
         // Hidden behind the monetization switch while ads are disabled.
