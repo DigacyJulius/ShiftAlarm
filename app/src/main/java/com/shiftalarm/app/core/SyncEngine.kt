@@ -67,10 +67,15 @@ object SyncEngine {
             val events: List<CalEvent> = when {
                 data.icalEvents.isNotEmpty() ->
                     data.icalEvents.filter { it.begin >= from && it.begin <= to }
-                data.settings.deviceCalendarIds.isNotEmpty() -> {
+                data.settings.deviceCalendarIds.isNotEmpty() || data.settings.deviceCalendarNames.isNotEmpty() -> {
                     // Device calendars (CalendarProvider). Needs READ_CALENDAR.
+                    // Match by stable keys (survives renames) plus legacy ids.
                     try {
-                        CalendarReader.queryEvents(context, from, to, data.settings.deviceCalendarIds)
+                        CalendarReader.queryEvents(
+                            context, from, to,
+                            data.settings.deviceCalendarIds,
+                            data.settings.deviceCalendarNames
+                        )
                     } catch (e: SecurityException) {
                         errors += t("Device calendar permission missing — kept existing alarms", "缺少日曆讀取權限——保留原有鬧鐘")
                         readOk = false
@@ -119,14 +124,16 @@ object SyncEngine {
                 if (begin < from || begin > to) continue
                 val idSeed = (me.date + "#" + me.profileId).hashCode().toLong().let {
                     if (it < 0) -it else it
-                } % 10_000_000L
-                if (dismissed.containsKey(100_000_000L + idSeed * 10L)) continue
+                } % 5_000_000L
+                // Manual-shift alarms occupy the 150M..200M id range (events
+                // use 100M..150M) so the two sources can never collide.
+                if (dismissed.containsKey(150_000_000L + idSeed * 10L)) continue
                 if (me.off) {
                     offDays++
                     continue
                 }
                 val shift = profile.shifts.firstOrNull { it.name == me.shiftName } ?: continue
-                val alarms = RuleEngine.buildAlarmsForShift(shift, profile, begin, idSeed)
+                val alarms = RuleEngine.buildAlarmsForShift(shift, profile, begin, idSeed, 150_000_000L)
                     .filter { it.triggerAt > now && it.id !in activeDeletedIds }
                 if (alarms.isNotEmpty()) matchedEvents++
                 workEntries += alarms
@@ -189,7 +196,12 @@ object SyncEngine {
         val snoozes = data.scheduled.filter { it.isSnooze && it.triggerAt > now }
         val tests = data.scheduled.filter { it.kind == "test" && it.triggerAt > now }
 
-        val all = (workEntries + normalEntries + snoozes + tests).sortedBy { it.triggerAt }
+        // Belt-and-braces: alarm ids are allocated in disjoint ranges per
+        // source, but if a clash ever slipped through, drop the duplicate
+        // instead of letting one PendingIntent silently replace another.
+        val all = (workEntries + normalEntries + snoozes + tests)
+            .distinctBy { it.id }
+            .sortedBy { it.triggerAt }
 
         for (old in data.scheduled) AlarmScheduler.cancel(context, old)
         for (e in all) AlarmScheduler.schedule(context, e)

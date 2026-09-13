@@ -24,7 +24,12 @@ data class EventPreview(
 data class CalInfo(
     val id: Long,
     val name: String,
-    val account: String
+    val account: String,
+    /** Stable server-side identity (Calendars.NAME, e.g. "abc@group.calendar.google.com").
+     *  Unlike the display name (user can rename it anytime on desktop) or the
+     *  provider _id (can change when the account re-syncs), this key survives
+     *  renames — selection is stored against THIS. */
+    val key: String
 )
 
 object CalendarReader {
@@ -40,7 +45,7 @@ object CalendarReader {
             android.provider.CalendarContract.Calendars._ID,
             android.provider.CalendarContract.Calendars.CALENDAR_DISPLAY_NAME,
             android.provider.CalendarContract.Calendars.ACCOUNT_NAME,
-            android.provider.CalendarContract.Calendars.CALENDAR_COLOR
+            android.provider.CalendarContract.Calendars.NAME
         )
         val result = mutableListOf<CalInfo>()
         runCatching {
@@ -50,7 +55,13 @@ object CalendarReader {
                 android.provider.CalendarContract.Calendars.CALENDAR_DISPLAY_NAME + " ASC"
             )?.use { c ->
                 while (c.moveToNext()) {
-                    result += CalInfo(c.getLong(0), c.getString(1) ?: "", c.getString(2) ?: "")
+                    val id = c.getLong(0)
+                    result += CalInfo(
+                        id = id,
+                        name = c.getString(1) ?: "",
+                        account = c.getString(2) ?: "",
+                        key = c.getString(3) ?: ("id:" + id)
+                    )
                 }
             }
         }
@@ -65,15 +76,18 @@ object CalendarReader {
 
     /**
      * Read events from the user's device calendars within a time window.
-     * Returns events from ALL calendars when [calendarIds] is empty; only
-     * the selected ones otherwise. Throws SecurityException if the
-     * READ_CALENDAR permission is missing — callers handle that.
+     * A calendar is included when its stable [calendarKeys] entry matches
+     * (preferred — survives renames & provider id changes) or its raw
+     * provider id is in [calendarIds] (legacy selections). Returns events
+     * from ALL calendars when both sets are empty. Throws SecurityException
+     * if the READ_CALENDAR permission is missing — callers handle that.
      */
     fun queryEvents(
         context: Context,
         fromMillis: Long,
         toMillis: Long,
-        calendarIds: Set<Long>
+        calendarIds: Set<Long>,
+        calendarKeys: Set<String> = emptySet()
     ): List<CalEvent> {
         val projection = arrayOf(
             android.provider.CalendarContract.Instances._ID,
@@ -83,6 +97,13 @@ object CalendarReader {
             android.provider.CalendarContract.Instances.EVENT_LOCATION,
             android.provider.CalendarContract.Instances.CALENDAR_ID
         )
+        // Map provider id → stable key, so legacy id-based selections keep
+        // working AND renamed/re-synced calendars (new id, same key) match.
+        val keyById: Map<Long, String> =
+            if (calendarKeys.isEmpty() && calendarIds.isEmpty()) emptyMap()
+            else runCatching {
+                listCalendars(context).associate { it.id to it.key }
+            }.getOrDefault(emptyMap())
         val result = mutableListOf<CalEvent>()
         context.contentResolver.query(
             instancesUri(fromMillis, toMillis), projection, null, null,
@@ -90,7 +111,11 @@ object CalendarReader {
         )?.use { c ->
             while (c.moveToNext()) {
                 val calId = c.getLong(5)
-                if (calendarIds.isNotEmpty() && calId !in calendarIds) continue
+                val selected = calendarIds.isNotEmpty() || calendarKeys.isNotEmpty()
+                if (selected &&
+                    calId !in calendarIds &&
+                    keyById[calId] !in calendarKeys
+                ) continue
                 result += CalEvent(
                     instanceId = c.getLong(0),
                     begin = c.getLong(1),

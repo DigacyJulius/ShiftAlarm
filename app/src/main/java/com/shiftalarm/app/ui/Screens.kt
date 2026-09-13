@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.NotificationsActive
@@ -58,6 +59,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -69,6 +71,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.shiftalarm.app.calendar.CalendarReader
 import com.shiftalarm.app.calendar.CalInfo
+import com.shiftalarm.app.core.Backup
 import com.shiftalarm.app.core.L10n
 import com.shiftalarm.app.core.Monetization
 import com.shiftalarm.app.core.RuleEngine
@@ -82,6 +85,7 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 // ---------- 地點設定檔 ----------
@@ -553,6 +557,9 @@ fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
         "about" -> SettingsSubPage(t("About", "關於"), { page = "" }) {
             SettingsAboutBody()
         }
+        "backup" -> SettingsSubPage(t("Backup & restore", "備份與還原"), { page = "" }) {
+            SettingsBackupBody(data, persistThenSync)
+        }
         "ads" -> SettingsSubPage(t("Ads & purchase", "廣告與購買"), { page = "" }) {
             SettingsAdsBody(data, persistThenSync)
         }
@@ -617,6 +624,13 @@ fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
                         t("Tutorial", "教學"),
                         t("How to use this app", "使用方法")
                     ) { page = "tutorial" }
+                }
+                item {
+                    SettingsCategory(
+                        Icons.Filled.CloudSync,
+                        t("Backup & restore", "備份與還原"),
+                        t("Save profiles & alarms to cloud / file", "將設定檔同鬧鐘備份到雲端／檔案")
+                    ) { page = "backup" }
                 }
                 item {
                     SettingsCategory(
@@ -1002,6 +1016,94 @@ private fun SettingsAdsBody(data: AppData, persistThenSync: ((AppData) -> AppDat
 }
 
 @Composable
+private fun SettingsBackupBody(data: AppData, persistThenSync: ((AppData) -> AppData) -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var message by remember { mutableStateOf<String?>(null) }
+
+    // Export: user picks WHERE — the system picker can save straight into
+    // Google Drive (or any cloud/file app), and the file then syncs to the
+    // user's Drive automatically, ready to import on the new phone.
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            scope.launch(Dispatchers.IO) {
+                val ok = runCatching {
+                    context.contentResolver.openOutputStream(uri)?.use { out ->
+                        out.write(Backup.serialize(data).toByteArray())
+                    } != null
+                }.getOrDefault(false)
+                message = if (ok)
+                    t("✓ Backup saved. Keep the file (e.g. in Google Drive) and import it on your new phone.", "✓ 備份已儲存。留好個檔案（例如存入 Google Drive），換機時匯入返即可。")
+                else
+                    t("✗ Failed to write the backup file.", "✗ 寫入備份檔案失敗。")
+            }
+        }
+    }
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch(Dispatchers.IO) {
+                val text = runCatching {
+                    context.contentResolver.openInputStream(uri)?.bufferedReader()?.readText()
+                }.getOrNull()
+                val merged = text?.let { Backup.restoreInto(data, it) }
+                when {
+                    text == null ->
+                        message = t("✗ Failed to read the file.", "✗ 讀取檔案失敗。")
+                    merged == null ->
+                        message = t("✗ That file is not a valid backup.", "✗ 呢個檔案唔係有效嘅備份。")
+                    else -> {
+                        persistThenSync { merged }
+                        message = t("✓ Backup restored — alarms rescheduled.", "✓ 備份已還原——鬧鐘已重新排程。")
+                    }
+                }
+            }
+        }
+    }
+
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            t(
+                "The backup contains your work profiles, normal alarms, manual shifts, world clocks and all settings. Two ways to keep them safe:",
+                "備份包含你嘅地點設定檔、一般鬧鐘、手動更期、世界時鐘同全部設定。保護方法有兩種："
+            ),
+            fontSize = 13.sp
+        )
+        Text(
+            t(
+                "① Automatic: Android already backs this app's data up to your Google account (in Google Drive, under device backup) every day when idle — when you set up a new phone and restore from your account, Shiftlarm's data comes back with it.",
+                "① 自動：Android 已經會每日喺開閒時自動將 app 資料備份到你嘅 Google 帳號（喺 Google Drive 嘅裝置備份入面）——新電話設定時由帳號還原，Shiftlarm 嘅資料會一齊返嚟。"
+            ),
+            fontSize = 13.sp
+        )
+        Text(
+            t(
+                "② Manual file: tap Export and choose Google Drive as the location — the .json backup file lives in your Drive and syncs to every device. On the new phone: install Shiftlarm → Settings → Backup & restore → Import.",
+                "② 手動檔案：撳「匯出備份」並揀 Google Drive 做儲存位置——.json 備份檔會存喺你嘅 Drive 並同步到所有裝置。新電話：裝好 Shiftlarm → 設定 → 備份與還原 → 匯入。"
+            ),
+            fontSize = 13.sp
+        )
+        Button(
+            onClick = { exportLauncher.launch(Backup.fileName()) },
+            modifier = Modifier.fillMaxWidth()
+        ) { Text(t("Export backup file (.json)", "匯出備份檔案（.json）")) }
+        OutlinedButton(
+            onClick = { importLauncher.launch(arrayOf("application/json", "text/*", "application/octet-stream")) },
+            modifier = Modifier.fillMaxWidth()
+        ) { Text(t("Import backup file", "匯入備份檔案")) }
+        message?.let {
+            Text(it, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+        }
+    }
+}
+
+@Composable
 private fun SettingsAboutBody() {
     val context = LocalContext.current
     Column(
@@ -1044,7 +1146,10 @@ fun IntField(label: String, value: Int, onChange: (Int) -> Unit) {
 
 // ---------- 裝置日曆選擇 ----------
 
-/** Pick which device calendars (CalendarProvider) hold the user's roster. */
+/** Pick which device calendars (CalendarProvider) hold the user's roster.
+ *  Selection is stored against each calendar's STABLE server-side key, so
+ *  renaming a calendar on desktop (or Android re-assigning its internal id)
+ *  never breaks the link — the app always shows the current display name. */
 @Composable
 fun DeviceCalendarsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -1052,9 +1157,12 @@ fun DeviceCalendarsScreen(data: AppData, persistThenSync: ((AppData) -> AppData)
         mutableStateOf(CalendarReader.hasPermission(context))
     }
     var cals by remember { mutableStateOf<List<CalInfo>>(emptyList()) }
-    var selected by remember(data.settings.deviceCalendarIds) {
-        mutableStateOf(data.settings.deviceCalendarIds.toMutableSet())
+    // Selection by stable key. Legacy id-only selections resolve to keys
+    // once the calendar list loads, so existing users keep their picks.
+    var selected by remember(data.settings.deviceCalendarNames) {
+        mutableStateOf(data.settings.deviceCalendarNames.toMutableSet())
     }
+    var resolvedLegacy by remember { mutableStateOf(false) }
 
     val permLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -1062,7 +1170,15 @@ fun DeviceCalendarsScreen(data: AppData, persistThenSync: ((AppData) -> AppData)
 
     LaunchedEffect(hasPerm) {
         if (hasPerm) {
-            cals = withContext(Dispatchers.IO) { CalendarReader.listCalendars(context) }
+            val list = withContext(Dispatchers.IO) { CalendarReader.listCalendars(context) }
+            cals = list
+            if (!resolvedLegacy && data.settings.deviceCalendarNames.isEmpty()) {
+                resolvedLegacy = true
+                val legacyKeys = list
+                    .filter { it.id in data.settings.deviceCalendarIds }
+                    .map { it.key }
+                if (legacyKeys.isNotEmpty()) selected = (selected + legacyKeys).toMutableSet()
+            }
         }
     }
 
@@ -1097,16 +1213,16 @@ fun DeviceCalendarsScreen(data: AppData, persistThenSync: ((AppData) -> AppData)
                 items(cals) { cal ->
                     Row(
                         Modifier.fillMaxWidth().clickable {
-                            selected = if (cal.id in selected) (selected - cal.id).toMutableSet()
-                            else (selected + cal.id).toMutableSet()
+                            selected = if (cal.key in selected) (selected - cal.key).toMutableSet()
+                            else (selected + cal.key).toMutableSet()
                         },
                         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
                     ) {
                         Checkbox(
-                            checked = cal.id in selected,
+                            checked = cal.key in selected,
                             onCheckedChange = {
-                                selected = if (it) (selected + cal.id).toMutableSet()
-                                else (selected - cal.id).toMutableSet()
+                                selected = if (it) (selected + cal.key).toMutableSet()
+                                else (selected - cal.key).toMutableSet()
                             }
                         )
                         Column {
@@ -1131,8 +1247,14 @@ fun DeviceCalendarsScreen(data: AppData, persistThenSync: ((AppData) -> AppData)
             Spacer(Modifier.height(8.dp))
             Button(
                 onClick = {
+                    // Save stable keys AND the current provider ids (kept for
+                    // backward compatibility / migration on other installs).
+                    val currentIds = cals.filter { it.key in selected }.map { it.id }.toSet()
                     persistThenSync { d ->
-                        d.copy(settings = d.settings.copy(deviceCalendarIds = selected.toSet()))
+                        d.copy(settings = d.settings.copy(
+                            deviceCalendarNames = selected.toSet(),
+                            deviceCalendarIds = currentIds
+                        ))
                     }
                 },
                 modifier = Modifier.fillMaxWidth()
@@ -1143,7 +1265,10 @@ fun DeviceCalendarsScreen(data: AppData, persistThenSync: ((AppData) -> AppData)
                     onClick = {
                         selected = mutableSetOf()
                         persistThenSync { d ->
-                            d.copy(settings = d.settings.copy(deviceCalendarIds = emptySet()))
+                            d.copy(settings = d.settings.copy(
+                                deviceCalendarIds = emptySet(),
+                                deviceCalendarNames = emptySet()
+                            ))
                         }
                     },
                     modifier = Modifier.fillMaxWidth()

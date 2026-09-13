@@ -57,19 +57,24 @@ object RuleEngine {
         settings: AppSettings
     ): List<AlarmEntry> {
         val cfg = pickShift(event, profile, settings) ?: return emptyList()
-        return buildAlarmsForShift(cfg, profile, event.begin, event.instanceId % 10_000_000L)
+        // Event-based work alarms occupy the 100M..150M id range.
+        return buildAlarmsForShift(cfg, profile, event.begin, event.instanceId % 5_000_000L, 100_000_000L)
             .map { it.copy(groupId = event.instanceId) }
     }
 
     /** Build alarms for an explicitly chosen shift on a given day.
      *  Used by the in-app Calendar page where the user picks the profile
      *  and shift directly, so no keyword/hour matching is involved.
-     *  [idSeed] keeps alarm ids stable across syncs (for delete/restore). */
+     *  [idSeed] keeps alarm ids stable across syncs (for delete/restore).
+     *  [idBase] selects the id RANGE so different alarm sources never
+     *  collide: events 100M..150M, manual shifts 150M..200M, normal alarms
+     *  200M..250M, snooze 250M..260M, test 260M, timer 280M. */
     fun buildAlarmsForShift(
         cfg: ShiftConfig,
         profile: WorkProfile,
         dayMillis: Long,
-        idSeed: Long
+        idSeed: Long,
+        idBase: Long = 100_000_000L
     ): List<AlarmEntry> {
         val (h, m) = parseTime(cfg.wakeTime)
         val base = Calendar.getInstance().apply {
@@ -79,7 +84,7 @@ object RuleEngine {
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
         }
-        val baseId = 100_000_000L + (idSeed % 10_000_000L) * 10L
+        val baseId = idBase + (idSeed % 5_000_000L) * 10L
         val result = mutableListOf<AlarmEntry>()
         for (i in 0..cfg.alarmCount.coerceIn(0, 9)) {
             val t = base.timeInMillis + TimeUnit.MINUTES.toMillis(cfg.intervalMin.toLong() * i)

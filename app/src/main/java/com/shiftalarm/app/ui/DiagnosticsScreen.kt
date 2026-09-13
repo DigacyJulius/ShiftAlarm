@@ -97,10 +97,14 @@ fun DiagnosticsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> 
                 .sortedBy { it.begin }
                 .take(200)
                 .map { EventPreview(it.title, it.begin, it.calendarId) }
-        } else if (data.settings.deviceCalendarIds.isNotEmpty()) {
+        } else if (data.settings.deviceCalendarIds.isNotEmpty() || data.settings.deviceCalendarNames.isNotEmpty()) {
             try {
                 val evs = withContext(Dispatchers.IO) {
-                    CalendarReader.queryEvents(context, from, to, data.settings.deviceCalendarIds)
+                    CalendarReader.queryEvents(
+                        context, from, to,
+                        data.settings.deviceCalendarIds,
+                        data.settings.deviceCalendarNames
+                    )
                 }.sortedBy { it.begin }
                 icalStatus = t("✓ Device calendars read OK: ", "✓ 裝置日曆讀取成功：窗口內 ") + evs.size + t(" events in window", " 個事件")
                 previews = evs.take(200).map { EventPreview(it.title, it.begin, it.calendarId) }
@@ -160,7 +164,7 @@ fun DiagnosticsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> 
                             } else ""
                             t("Current source: imported .ics file (", "現時來源：已匯入嘅 .ics 檔案（") + data.icalEvents.size + t(" events)", " 個事件）") + range
                         }
-                        data.settings.deviceCalendarIds.isNotEmpty() -> t("Current source: device calendars (", "現時來源：裝置日曆（已選 ") + data.settings.deviceCalendarIds.size + t(" selected)", " 個）")
+                        data.settings.deviceCalendarIds.isNotEmpty() || data.settings.deviceCalendarNames.isNotEmpty() -> t("Current source: device calendars (", "現時來源：裝置日曆（已選 ") + maxOf(data.settings.deviceCalendarIds.size, data.settings.deviceCalendarNames.size) + t(" selected)", " 個）")
                         data.settings.icalUrl.isNotBlank() -> t("Current source: iCal URL", "現時來源：iCal 網址")
                         else -> t("Current source: (none — use a device calendar, an iCal URL, an .ics import, or the Calendar page)", "現時來源：（未設定——可用裝置日曆、iCal 網址、匯入檔案，或「日曆」分頁手動填更）")
                     }

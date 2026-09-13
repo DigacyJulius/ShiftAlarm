@@ -64,7 +64,10 @@ data class AppSettings(
     val adUnitId: String = "",
     // Device calendars (CalendarProvider ids) selected as the roster source.
     // Empty = not used. Only takes effect when no .ics file is imported.
-    val deviceCalendarIds: Set<Long> = emptySet()
+    val deviceCalendarIds: Set<Long> = emptySet(),
+    // Stable server-side keys of the selected calendars (survive renames
+    // and provider id changes). Preferred over [deviceCalendarIds].
+    val deviceCalendarNames: Set<String> = emptySet()
 )
 
 /** One manually-entered shift on the in-app Calendar page.

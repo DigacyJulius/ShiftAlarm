@@ -230,7 +230,8 @@ fun AppRoot() {
                         "同步完成，但排唔到任何鬧鐘：仲未有地點設定檔。去「設定檔」→ 新增（例：名稱 CMC、地點關鍵字 cmc），儲存後再撳同步。"
                     )
                 data.settings.icalUrl.isBlank() && data.icalEvents.isEmpty() &&
-                    data.settings.deviceCalendarIds.isEmpty() && data.manualShifts.isEmpty() ->
+                    data.settings.deviceCalendarIds.isEmpty() &&
+                    data.settings.deviceCalendarNames.isEmpty() && data.manualShifts.isEmpty() ->
                     t(
                         "Synced, but no roster source set. Paste an iCal URL, pick device calendars, import an .ics file (Diagnostics), or enter shifts by hand on the Calendar page.",
                         "同步完成，但未設定更期來源。可以貼 iCal 網址、揀裝置日曆、喺「診斷」匯入 .ics 檔案，或直接喺「日曆」分頁手動填更。"
