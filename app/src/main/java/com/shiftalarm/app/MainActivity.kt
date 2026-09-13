@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -65,6 +66,7 @@ import com.shiftalarm.app.ui.DiagnosticsScreen
 import com.shiftalarm.app.ui.NormalAlarmsScreen
 import com.shiftalarm.app.ui.ProfilesScreen
 import com.shiftalarm.app.ui.SettingsScreen
+import com.shiftalarm.app.ui.ToolsScreen
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -96,6 +98,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         SyncEngine.schedulePeriodicSync(this)
+
+        // Initialize AdMob off the main thread (Google recommends this).
+        Thread {
+            runCatching { com.google.android.gms.ads.MobileAds.initialize(this) }
+        }.start()
 
         // The old 24/7 standby foreground service is gone (user request:
         // no persistent notification). Its job is now done by a
@@ -255,35 +262,58 @@ fun AppRoot() {
                     NavigationBarItem(
                         selected = tab == 3,
                         onClick = { tab = 3 },
-                        icon = { Icon(Icons.Filled.Settings, null) },
-                        label = { Text("設定") }
+                        icon = { Icon(Icons.Filled.Schedule, null) },
+                        label = { Text("工具") }
                     )
                     NavigationBarItem(
                         selected = tab == 4,
                         onClick = { tab = 4 },
-                        icon = { Icon(Icons.Filled.BugReport, null) },
-                        label = { Text("診斷") }
+                        icon = { Icon(Icons.Filled.Settings, null) },
+                        label = { Text("設定") }
                     )
                 }
             }
         ) { padding ->
-            Box(Modifier.padding(padding)) {
-                when (tab) {
-                    0 -> HomeScreen(
-                        data = data,
-                        syncMessage = syncMessage,
-                        onSync = { doSync() },
-                        onTest = { scope.launch { scheduleTestAlarm(context, store) } },
-                        onDelete = { e -> deleteAlarm(e) }
-                    )
-                    1 -> ProfilesScreen(data, persistThenSync = ::persistThenSync)
-                    2 -> NormalAlarmsScreen(data, persistThenSync = ::persistThenSync)
-                    3 -> SettingsScreen(data, persistThenSync = ::persistThenSync)
-                    else -> DiagnosticsScreen(data, persistThenSync = ::persistThenSync)
+            Column(Modifier.padding(padding)) {
+                // Top banner ad (hidden once the remove-ads purchase is made).
+                if (!data.settings.adsRemoved) {
+                    AdBanner(adUnitId = data.settings.adUnitId)
+                }
+                Box(Modifier.weight(1f)) {
+                    when (tab) {
+                        0 -> HomeScreen(
+                            data = data,
+                            syncMessage = syncMessage,
+                            onSync = { doSync() },
+                            onTest = { scope.launch { scheduleTestAlarm(context, store) } },
+                            onDelete = { e -> deleteAlarm(e) }
+                        )
+                        1 -> ProfilesScreen(data, persistThenSync = ::persistThenSync)
+                        2 -> NormalAlarmsScreen(data, persistThenSync = ::persistThenSync)
+                        3 -> ToolsScreen(data, persistThenSync = ::persistThenSync)
+                        else -> SettingsScreen(data, persistThenSync = ::persistThenSync)
+                    }
                 }
             }
         }
     }
+}
+
+/** Top banner ad. Uses Google's official TEST ad unit unless the user has
+ *  saved their own AdMob unit id in Settings. */
+@Composable
+fun AdBanner(adUnitId: String) {
+    androidx.compose.ui.viewinterop.AndroidView(
+        factory = { ctx ->
+            com.google.android.gms.ads.AdView(ctx).apply {
+                setAdSize(com.google.android.gms.ads.AdSize.BANNER)
+                this.adUnitId =
+                    adUnitId.ifBlank { "ca-app-pub-3940256099942544/6300978111" }
+                loadAd(com.google.android.gms.ads.AdRequest.Builder().build())
+            }
+        },
+        modifier = Modifier.fillMaxWidth()
+    )
 }
 
 suspend fun scheduleTestAlarm(context: Context, store: Store) {

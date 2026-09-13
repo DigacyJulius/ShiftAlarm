@@ -13,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.util.Calendar
+import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 
 data class SyncResult(
@@ -107,13 +108,21 @@ object SyncEngine {
         }
 
         val normalEntries = mutableListOf<AlarmEntry>()
+        // Region alarm support: when the user picks a timezone, normal alarms
+        // fire at that region's local time (e.g. 07:00 Hong Kong time even
+        // while the device is in Tokyo). Work alarms follow the roster and
+        // always use the device timezone.
+        val alarmTz = data.settings.alarmTimezone
+            .takeIf { it.isNotBlank() }
+            ?.let { runCatching { TimeZone.getTimeZone(it) }.getOrNull() }
+            ?: TimeZone.getDefault()
         for (na in data.normalAlarms.filter { it.enabled }) {
             // ID range 200M..250M — must NOT overlap the snooze range
             // (250M..260M) or the test alarm id (260M), otherwise a
             // PendingIntent collision silently replaces an alarm.
             val baseId = 200_000_000L + (na.id % 5_000_000L) * 10L
             for (d in 0..lookaheadDays) {
-                val cal = Calendar.getInstance()
+                val cal = Calendar.getInstance(alarmTz)
                 cal.set(Calendar.HOUR_OF_DAY, na.hour)
                 cal.set(Calendar.MINUTE, na.minute)
                 cal.set(Calendar.SECOND, 0)

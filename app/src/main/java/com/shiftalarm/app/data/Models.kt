@@ -53,7 +53,12 @@ data class AppSettings(
     val nightStart: Int = 18,
     val nightEnd: Int = 28,
     val snoozeMinutes: Int = 5,
-    val lookaheadDays: Int = 7
+    val lookaheadDays: Int = 7,
+    // Empty = follow the device timezone. When set (e.g. "Asia/Hong_Kong"),
+    // normal alarms fire at that region's local time — useful when travelling.
+    val alarmTimezone: String = "",
+    val adsRemoved: Boolean = false,
+    val adUnitId: String = ""
 )
 
 @Serializable
@@ -83,5 +88,9 @@ data class AppData(
     val dismissedAlarmMeta: Map<Long, String> = emptyMap(),
     val dismissedAlarmTimes: Map<Long, Long> = emptyMap(),
     val syncLogs: List<SyncLog> = emptyList(),
-    val icalEvents: List<CalEvent> = emptyList()
+    val icalEvents: List<CalEvent> = emptyList(),
+    // World clock: user-selected timezone ids (IANA, e.g. "Asia/Tokyo").
+    val worldClocks: List<String> = emptyList(),
+    // Active timer: absolute end time in millis (0 = no timer running).
+    val timerEndAt: Long = 0
 )

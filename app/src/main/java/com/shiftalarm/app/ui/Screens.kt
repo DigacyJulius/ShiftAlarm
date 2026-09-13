@@ -398,6 +398,16 @@ fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
     val context = LocalContext.current
     val s = data.settings
     val now = System.currentTimeMillis()
+    // Diagnostics now lives behind a button here instead of occupying a
+    // bottom nav tab.
+    var showDiagnostics by remember { mutableStateOf(false) }
+    if (showDiagnostics) {
+        Column(Modifier.fillMaxSize()) {
+            TextButton(onClick = { showDiagnostics = false }) { Text("← 返回設定") }
+            DiagnosticsScreen(data, persistThenSync)
+        }
+        return
+    }
     // Deleted alarms whose original fire time has passed are hidden —
     // e.g. a deleted 09:00 alarm disappears from this list at 09:01.
     // Legacy entries without a recorded time are still shown.
@@ -434,7 +444,7 @@ fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
             var icalUrl by remember(s.icalUrl) { mutableStateOf(s.icalUrl) }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    "貼上 Google Calendar 的「私人 iCal 網址」（齒輪設定 → 匯入和匯出／整合日曆 → 私人網址）。App 每小時自動抓取一次。若已在「診斷」分頁匯入過 .ics 檔案，檔案優先。",
+                    "貼上 Google Calendar 的「私人 iCal 網址」（齒輪設定 → 匯入和匯出／整合日曆 → 私人網址）。App 每小時自動抓取一次。若已在「診斷」入面匯入過 .ics 檔案，檔案優先。",
                     fontSize = 12.sp
                 )
                 OutlinedTextField(
@@ -453,6 +463,105 @@ fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 IntField("貪睡間隔（分鐘）", s.snoozeMinutes) { v -> persistThenSync { d -> d.copy(settings = d.settings.copy(snoozeMinutes = v)) } }
                 IntField("預排日數（日，最少 7）", s.lookaheadDays) { v -> persistThenSync { d -> d.copy(settings = d.settings.copy(lookaheadDays = v.coerceAtLeast(7))) } }
+            }
+        }
+
+        item { Text("地區鬧鐘（旅遊用）", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+        item {
+            var showTzPicker by remember { mutableStateOf(false) }
+            val tzLabel = if (s.alarmTimezone.isBlank()) "跟隨裝置" else zoneLabel(s.alarmTimezone)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "一般鬧鐘會喺選定地區嘅當地時間響。例如揀咗香港，去到東京旅行，07:00 鬧鐘照樣喺香港時間 07:00 響。更期鬧鐘則跟裝置時區。",
+                    fontSize = 12.sp
+                )
+                OutlinedButton(
+                    onClick = { showTzPicker = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("鬧鐘時區：" + tzLabel) }
+            }
+            if (showTzPicker) {
+                var tzQuery by remember { mutableStateOf("") }
+                val candidates = listOf("跟隨裝置" to "") +
+                    WORLD_CITIES.filter {
+                        it.first.contains(tzQuery) || it.second.contains(tzQuery, ignoreCase = true)
+                    }
+                AlertDialog(
+                    onDismissRequest = { showTzPicker = false },
+                    title = { Text("揀鬧鐘時區") },
+                    text = {
+                        Column {
+                            OutlinedTextField(
+                                value = tzQuery,
+                                onValueChange = { tzQuery = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("搜尋城市") }
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            LazyColumn(Modifier.height(320.dp)) {
+                                items(candidates, key = { it.first + it.second }) { (label, zone) ->
+                                    Text(
+                                        label,
+                                        fontSize = 15.sp,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                persistThenSync { d ->
+                                                    d.copy(settings = d.settings.copy(alarmTimezone = zone))
+                                                }
+                                                showTzPicker = false
+                                            }
+                                            .padding(vertical = 10.dp)
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showTzPicker = false }) { Text("關閉") }
+                    }
+                )
+            }
+        }
+
+        item { Text("廣告", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+        item {
+            if (s.adsRemoved) {
+                Text("✓ 已移除廣告，多謝支持！", fontSize = 14.sp)
+            } else {
+                var purchaseMsg by remember { mutableStateOf<String?>(null) }
+                var adUnit by remember(s.adUnitId) { mutableStateOf(s.adUnitId) }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "廣告條只會顯示喺頂部，唔會彈出全頁廣告。一次性購買即可永久移除廣告。",
+                        fontSize = 12.sp
+                    )
+                    Button(onClick = {
+                        val activity = context as? android.app.Activity
+                        if (activity == null) {
+                            purchaseMsg = "無法啟動購買流程"
+                            return@Button
+                        }
+                        com.shiftalarm.app.core.AdsBilling.purchase(activity) { ok, msg ->
+                            purchaseMsg = msg
+                            if (ok) persistThenSync { d ->
+                                d.copy(settings = d.settings.copy(adsRemoved = true))
+                            }
+                        }
+                    }) { Text("移除廣告（一次性購買）") }
+                    purchaseMsg?.let { Text(it, fontSize = 12.sp) }
+                    OutlinedTextField(
+                        value = adUnit,
+                        onValueChange = { adUnit = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("AdMob 廣告單元 ID（選填，留空＝測試廣告）") }
+                    )
+                    OutlinedButton(onClick = {
+                        persistThenSync { d ->
+                            d.copy(settings = d.settings.copy(adUnitId = adUnit.trim()))
+                        }
+                    }) { Text("儲存廣告單元 ID") }
+                }
             }
         }
 
@@ -556,6 +665,12 @@ fun SettingsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Uni
                         }
                     }) { Text("允許勿擾模式繞過") }
                 }
+
+                // Diagnostics moved here from the bottom nav bar.
+                OutlinedButton(
+                    onClick = { showDiagnostics = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("診斷／日曆同步資料") }
             }
         }
         item { Spacer(Modifier.height(16.dp)) }
