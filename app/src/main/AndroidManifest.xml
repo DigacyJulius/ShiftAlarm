@@ -1,14 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- ShiftAlarm 缺少這行 -->
-    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
-    <!-- SYSTEM_ALERT_WINDOW ("display over other apps") exempts the app from
-         background-activity-launch restrictions, letting the ringing screen pop
-         up immediately even when another app is in the foreground. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
@@ -21,6 +16,15 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
 
+    <queries>
+        <intent>
+            <action android:name="android.settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM" />
+        </intent>
+        <intent>
+            <action android:name="android.settings.MANAGE_SPECIAL_APP_ACCESS" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -28,9 +32,6 @@
         android:label="@string/app_name"
         android:theme="@style/Theme.ShiftAlarm">
 
-        <!-- AdMob application id. This is Google's OFFICIAL TEST app id —
-             replace with your own AdMob app id (ca-app-pub-XXXX~XXXX) when
-             going live. A missing value here crashes the app on start. -->
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
             android:value="ca-app-pub-3940256099942544~3347511713" />
