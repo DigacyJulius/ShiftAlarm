@@ -13,10 +13,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
@@ -44,11 +42,6 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 fun PermissionGateScreen(onAllGranted: () -> Unit) {
     val context = LocalContext.current
     var missingPermissions by remember { mutableStateOf(listOf<String>()) }
-    // 鬧鐘和提醒 is ALWAYS shown on this page with its live status —
-    // never hidden, even when the system already reports it as granted
-    // (battery-exempt apps make the system say "granted", which previously
-    // hid the row entirely and made the user think the app never asks).
-    var exactAlarmGranted by remember { mutableStateOf(true) }
     var recheckTrigger by remember { mutableStateOf(0) }
 
     val notifLauncher = rememberLauncherForActivityResult(
@@ -71,11 +64,8 @@ fun PermissionGateScreen(onAllGranted: () -> Unit) {
             missing.add("notif")
         }
 
-        // 2. 鬧鐘和提醒 (Exact Alarm) - MOST IMPORTANT. Always displayed
-        // below with its live status; only BLOCKS the gate when missing.
-        exactAlarmGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
-            alarmManager.canScheduleExactAlarms()
-        if (!exactAlarmGranted) {
+        // 2. 鬧鐘和提醒 (Exact Alarm) - MOST IMPORTANT
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
             missing.add("exact_alarm")
         }
 
@@ -148,49 +138,7 @@ fun PermissionGateScreen(onAllGranted: () -> Unit) {
         )
         Spacer(Modifier.height(24.dp))
 
-        // --- 鬧鐘和提醒：永遠顯示（連同即時狀態），唔會因為系統回報已允許而消失 ---
-        Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(t("Alarms & reminders", "鬧鐘和提醒"), fontSize = 16.sp)
-                Text(
-                    if (exactAlarmGranted)
-                        t("Allowed — alarms can ring in Doze.", "已允許——鬧鐘喺 Doze 休眠下都會響。")
-                    else
-                        t("NOT allowed — alarms may not ring!", "未允許——鬧鐘可能唔會響！"),
-                    fontSize = 12.sp,
-                    color = if (exactAlarmGranted) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.error
-                )
-            }
-            Text(
-                if (exactAlarmGranted) t("OK", "已允許") else t("Off", "未允許"),
-                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                fontSize = 14.sp,
-                color = if (exactAlarmGranted) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.error
-            )
-        }
-        if (!exactAlarmGranted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            Button(onClick = {
-                runCatching {
-                    context.startActivity(
-                        Intent(
-                            Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
-                            Uri.parse("package:${context.packageName}")
-                        )
-                    )
-                }
-            }) {
-                Text(t("Grant: Alarms & reminders", "授予：鬧鐘和提醒"))
-            }
-        }
-        Spacer(Modifier.height(20.dp))
-
-        // Other missing permissions (exact_alarm is handled by the row above).
-        missingPermissions.filter { it != "exact_alarm" }.forEach { perm ->
+        missingPermissions.forEach { perm ->
             val permLabel = when (perm) {
                 "notif" -> t("Notifications", "通知權限")
                 "exact_alarm" -> t("Alarms & reminders", "鬧鐘和提醒")
