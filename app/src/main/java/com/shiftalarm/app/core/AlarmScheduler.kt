@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import com.shiftalarm.app.data.AlarmEntry
+import kotlin.Result.runCatching
 
 object AlarmScheduler {
 
@@ -37,19 +38,6 @@ object AlarmScheduler {
         )
     }
 
-    /**
-     * Schedule an alarm that fires even when the app is closed and the
-     * device is in Doze — same strategy as the original working code
-     * (commit 58f548a / a251560):
-     *   1. setExactAndAllowWhileIdle() — exact, Doze-proof (needs the
-     *      "Alarms & reminders" permission; USE_EXACT_ALARM is also declared
-     *      so it is normally auto-granted).
-     *   2. setAlarmClock() — still fires in Doze, needs the same permission
-     *      on Android 14+ (rejected with SecurityException there).
-     *   3. setAndAllowWhileIdle() — the ORIGINAL Doze fallback from commit
-     *      58f548a: no permission needed, not exact but still wakes the
-     *      device in Doze. An alarm is NEVER silently dropped.
-     */
     fun schedule(context: Context, entry: AlarmEntry) {
         val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
@@ -70,13 +58,16 @@ object AlarmScheduler {
             Log.w(TAG, "setAlarmClock rejected, using inexact Doze fallback", e)
         }
 
-        // Commit-58 fallback: inexact but Doze-capable, no permission needed.
         runCatching {
             am.setAndAllowWhileIdle(
                 AlarmManager.RTC_WAKEUP, entry.triggerAt, pending(context, entry)
             )
         }.onFailure {
             Log.e(TAG, "Failed to schedule alarm ${entry.id}", it)
+        }
+
+        if (!ExactAlarmPermission.isGranted(context)) {
+            PermissionNudgeEvent.broadcast(context)
         }
     }
 
