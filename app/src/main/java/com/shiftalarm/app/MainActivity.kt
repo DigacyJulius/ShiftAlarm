@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.lifecycle.lifecycleScope
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -32,6 +33,7 @@ import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -39,6 +41,7 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -485,10 +488,47 @@ fun HomeScreen(
     val timeFmt = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
     val byDay = upcoming.groupBy { dayFmt.format(Date(it.triggerAt)) }
 
+    // Multi-select delete (like other alarm apps): long-press a row to enter
+    // selection mode, tap rows to toggle selection, then delete all at once.
+    var selectionMode by remember { mutableStateOf(false) }
+    var selected by remember { mutableStateOf(setOf<Long>()) }
+    BackHandler(enabled = selectionMode) {
+        selectionMode = false
+        selected = emptySet()
+    }
+
     LazyColumn(
         Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        if (selectionMode) {
+            item {
+                Card(Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            t("Selected: ", "已選：") + selected.size,
+                            modifier = Modifier.weight(1f),
+                            fontWeight = FontWeight.Bold
+                        )
+                        TextButton(onClick = {
+                            selectionMode = false
+                            selected = emptySet()
+                        }) { Text(t("Cancel", "取消")) }
+                        Button(
+                            onClick = {
+                                upcoming.filter { it.id in selected }.forEach { onDelete(it) }
+                                selectionMode = false
+                                selected = emptySet()
+                            },
+                            enabled = selected.isNotEmpty()
+                        ) { Text(t("Delete", "刪除")) }
+                    }
+                }
+            }
+        }
         item {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(20.dp)) {
@@ -553,31 +593,34 @@ fun HomeScreen(
             }
             items(entries) { e ->
                 Card(Modifier.fillMaxWidth()) {
-                    // Delete button stays hidden until the row is LONG-PRESSED
-                    // so it can't be hit accidentally while scrolling.
-                    var showDelete by remember { mutableStateOf(false) }
                     Row(
                         Modifier
                             .fillMaxWidth()
                             .combinedClickable(
-                                onClick = { if (showDelete) showDelete = false },
-                                onLongClick = { showDelete = true }
+                                onClick = {
+                                    if (selectionMode) {
+                                        selected = if (e.id in selected) selected - e.id else selected + e.id
+                                    }
+                                },
+                                onLongClick = {
+                                    selectionMode = true
+                                    selected = setOf(e.id)
+                                }
                             )
                             .padding(horizontal = 16.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        if (selectionMode) {
+                            Checkbox(
+                                checked = e.id in selected,
+                                onCheckedChange = { on ->
+                                    selected = if (on) selected + e.id else selected - e.id
+                                }
+                            )
+                        }
                         Column(Modifier.weight(1f)) {
                             Text(timeFmt.format(Date(e.triggerAt)), fontSize = 20.sp, fontWeight = FontWeight.Bold)
                             Text(e.label, fontSize = 15.sp)
-                        }
-                        if (showDelete) {
-                            IconButton(onClick = { onDelete(e) }) {
-                                Icon(
-                                    Icons.Filled.Delete,
-                                    t("Delete alarm", "刪除鬧鐘"),
-                                    tint = MaterialTheme.colorScheme.error
-                                )
-                            }
                         }
                     }
                 }

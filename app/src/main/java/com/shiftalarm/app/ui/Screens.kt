@@ -341,32 +341,79 @@ fun dayName(dow: Int): String {
 @Composable
 fun NormalAlarmsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) -> Unit) {
     var showAdd by remember { mutableStateOf(false) }
+    // Multi-select delete (like other alarm apps): long-press a row to enter
+    // selection mode, tap rows to toggle selection, then delete all at once.
+    var selectionMode by remember { mutableStateOf(false) }
+    var selected by remember { mutableStateOf(setOf<Long>()) }
+    BackHandler(enabled = selectionMode) {
+        selectionMode = false
+        selected = emptySet()
+    }
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Text(t("Alarms", "一般鬧鐘"), fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        Text(
-            t(
-                "Custom alarms independent of the roster — one-off or weekly repeating.",
-                "獨立於更期嘅自訂鬧鐘，可設一次性或每週重複。"
-            ),
-            fontSize = 13.sp
-        )
+        if (selectionMode) {
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    t("Selected: ", "已選：") + selected.size,
+                    modifier = Modifier.weight(1f),
+                    fontWeight = FontWeight.Bold
+                )
+                TextButton(onClick = {
+                    selectionMode = false
+                    selected = emptySet()
+                }) { Text(t("Cancel", "取消")) }
+                Button(
+                    onClick = {
+                        persistThenSync { d ->
+                            d.copy(normalAlarms = d.normalAlarms.filterNot { it.id in selected })
+                        }
+                        selectionMode = false
+                        selected = emptySet()
+                    },
+                    enabled = selected.isNotEmpty()
+                ) { Text(t("Delete", "刪除")) }
+            }
+        } else {
+            Text(
+                t(
+                    "Custom alarms independent of the roster — one-off or weekly repeating.",
+                    "獨立於更期嘅自訂鬧鐘，可設一次性或每週重複。"
+                ),
+                fontSize = 13.sp
+            )
+        }
         Spacer(Modifier.height(12.dp))
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(data.normalAlarms) { na ->
                 Card(Modifier.fillMaxWidth()) {
-                    // Delete button stays hidden until the row is LONG-PRESSED
-                    // so it can't be hit accidentally while scrolling.
-                    var showDelete by remember { mutableStateOf(false) }
                     Row(
                         Modifier
                             .fillMaxWidth()
                             .combinedClickable(
-                                onClick = { if (showDelete) showDelete = false },
-                                onLongClick = { showDelete = true }
+                                onClick = {
+                                    if (selectionMode) {
+                                        selected = if (na.id in selected) selected - na.id else selected + na.id
+                                    }
+                                },
+                                onLongClick = {
+                                    selectionMode = true
+                                    selected = setOf(na.id)
+                                }
                             )
                             .padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        if (selectionMode) {
+                            Checkbox(
+                                checked = na.id in selected,
+                                onCheckedChange = { on ->
+                                    selected = if (on) selected + na.id else selected - na.id
+                                }
+                            )
+                        }
                         Column(Modifier.weight(1f)) {
                             Text("%02d:%02d".format(na.hour, na.minute), fontSize = 26.sp, fontWeight = FontWeight.Bold)
                             Text(na.label.ifEmpty { t("Alarm", "鬧鐘") }, fontSize = 14.sp)
@@ -376,25 +423,14 @@ fun NormalAlarmsScreen(data: AppData, persistThenSync: ((AppData) -> AppData) ->
                                 fontSize = 12.sp
                             )
                         }
-                        Switch(checked = na.enabled, onCheckedChange = { on ->
-                            persistThenSync { d ->
-                                d.copy(normalAlarms = d.normalAlarms.map {
-                                    if (it.id == na.id) it.copy(enabled = on) else it
-                                })
-                            }
-                        })
-                        if (showDelete) {
-                            IconButton(onClick = {
+                        if (!selectionMode) {
+                            Switch(checked = na.enabled, onCheckedChange = { on ->
                                 persistThenSync { d ->
-                                    d.copy(normalAlarms = d.normalAlarms.filterNot { it.id == na.id })
+                                    d.copy(normalAlarms = d.normalAlarms.map {
+                                        if (it.id == na.id) it.copy(enabled = on) else it
+                                    })
                                 }
-                            }) {
-                                Icon(
-                                    Icons.Filled.Delete,
-                                    t("Delete", "刪除"),
-                                    tint = MaterialTheme.colorScheme.error
-                                )
-                            }
+                            })
                         }
                     }
                 }
